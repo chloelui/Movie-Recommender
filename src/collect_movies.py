@@ -1,7 +1,11 @@
 import csv
-from tmdb_api import discover_movies
+from tmdb_api import discover_movies, get_genres
 
 movies = []
+
+# Convert genre ID to genre name
+genres = get_genres()
+genre_map = {genre["id"]:genre["name"] for genre in genres}
 
 # Get movies across diff pages, sorted by popularity
 for page in range(1,6):
@@ -21,10 +25,13 @@ with open("data/movies.csv", "w", newline="", encoding="utf-8") as file:
         "vote_average",
         "vote_count",
         "popularity",
+        "genres",
         "overview"
     ])
 
     for movie in movies:
+        movie_genres = [genre_map[genre_id] for genre_id in movie["genre_ids"] if genre_id in genre_map]
+
         writer.writerow([
             movie["id"],
             movie["title"],
@@ -32,6 +39,7 @@ with open("data/movies.csv", "w", newline="", encoding="utf-8") as file:
             movie["vote_average"],
             movie["vote_count"],
             movie["popularity"],
+            '|'.join(movie_genres),
             movie["overview"]
         ])
 

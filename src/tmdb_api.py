@@ -41,7 +41,7 @@ def get_movie_credits(movie_id):
     url = f"{BASE_URL}/movie/{movie_id}/credits"
 
     response = requests.get(url,headers=HEADERS)
-    response.raise_for_status
+    response.raise_for_status()
 
     return response.json()
 
@@ -53,6 +53,16 @@ def discover_movies(page=1):
     params = {"page": page, "sort_by": "popularity.desc"}
 
     response = requests.get(url,headers=HEADERS,params=params)
-    response.raise_for_status
+    response.raise_for_status()
 
     return response.json()["results"]
+
+
+# Get TMDB's list of genres
+def get_genres():
+    url = f"{BASE_URL}/genre/movie/list"
+
+    response = requests.get(url,headers=HEADERS)
+    response.raise_for_status()
+
+    return response.json()["genres"]
