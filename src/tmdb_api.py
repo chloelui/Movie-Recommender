@@ -34,3 +34,13 @@ def get_movie(movie_id):
     response.raise_for_status()
 
     return response.json()
+
+
+# Director/cast credits
+def get_movie_credits(movie_id):
+    url = f"{BASE_URL}/movie/{movie_id}/credits"
+
+    response = requests.get(url,headers=HEADERS)
+    response.raise_for_status
+
+    return response.json()

@@ -1,4 +1,8 @@
-from tmdb_api import search_movies, get_movie
+from tmdb_api import (
+    search_movies, 
+    get_movie,
+    get_movie_credits
+)
 
 query = input("Enter a movie name: ")
 
@@ -19,6 +23,7 @@ for i, movie in enumerate(results[:5]):
 choice = int(input("\nChoose a movie number: ")) - 1
 selected_movie = results[choice]
 movie = get_movie(selected_movie["id"])
+credits = get_movie_credits(selected_movie["id"])
 
 print("\n-------------------------")
 print(movie["title"])
@@ -32,6 +37,11 @@ print("\nGenres:")
 
 for genre in movie["genres"]:
     print(f"- {genre["name"]}")
+
+print("\nCast:")
+
+for actor in credits["cast"][:5]:
+    print(f"- {actor["name"]}")
 
 print("\nOverview:")
 print(movie["overview"])
