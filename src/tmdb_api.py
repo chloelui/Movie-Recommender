@@ -44,3 +44,15 @@ def get_movie_credits(movie_id):
     response.raise_for_status
 
     return response.json()
+
+
+# Retrieve movies from TMDB's discover endpoint
+def discover_movies(page=1):
+    url = f"{BASE_URL}/discover/movie"
+
+    params = {"page": page, "sort_by": "popularity.desc"}
+
+    response = requests.get(url,headers=HEADERS,params=params)
+    response.raise_for_status
+
+    return response.json()["results"]
