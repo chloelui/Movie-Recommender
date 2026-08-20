@@ -11,13 +11,26 @@ HEADERS = {
     "Authorization": f"Bearer {TMDB_TOKEN}"
 }
 
+
+# Access API and movies
 def search_movies(query):
     url = f"{BASE_URL}/search/movie"
+
     params = {
         "query": query
     }
-    response = requests.get(url,headers=HEADERS,params=params)
 
+    response = requests.get(url,headers=HEADERS,params=params)
     response.raise_for_status()
 
     return response.json()["results"]
+
+
+# Add movie details
+def get_movie(movie_id):
+    url = f"{BASE_URL}/movie/{movie_id}"
+
+    response = requests.get(url,headers=HEADERS)
+    response.raise_for_status()
+
+    return response.json()
