@@ -1,5 +1,5 @@
 import csv
-from tmdb_api import discover_movies, get_genres
+from tmdb_api import discover_movies, get_genres, get_movie_credits
 
 movies = []
 
@@ -25,12 +25,15 @@ with open("data/movies.csv", "w", newline="", encoding="utf-8") as file:
         "vote_average",
         "vote_count",
         "popularity",
+        "cast",
         "genres",
         "overview"
     ])
 
     for movie in movies:
         movie_genres = [genre_map[genre_id] for genre_id in movie["genre_ids"] if genre_id in genre_map]
+        movie_cast = get_movie_credits(movie["id"])
+        top_five_actors = [actor["name"] for actor in movie_cast["cast"][:5]]
 
         writer.writerow([
             movie["id"],
@@ -39,6 +42,7 @@ with open("data/movies.csv", "w", newline="", encoding="utf-8") as file:
             movie["vote_average"],
             movie["vote_count"],
             movie["popularity"],
+            '|'.join(top_five_actors),
             '|'.join(movie_genres),
             movie["overview"]
         ])

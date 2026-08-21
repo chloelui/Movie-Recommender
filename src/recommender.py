@@ -11,7 +11,24 @@ def genre_similarity(movie_a, movie_b):
     genres_a = set(movie_a["genres"].split("|"))
     genres_b = set(movie_b["genres"].split("|"))
 
-    return len(genres_a & genres_b)   
+    return len(genres_a & genres_b) if genres_a and genres_b else 0
+
+
+# Cast similarity
+def cast_similarity(movie_a, movie_b):
+    cast_a = set(movie_a["cast"].split("|"))
+    cast_b = set(movie_b["cast"].split("|"))
+
+    return len(cast_a & cast_b) if cast_a and cast_b else 0
+
+
+# Add rating bonus to score
+def recommendation_score(target, movie):
+    genre_score = genre_similarity(target, movie)
+    cast_score = cast_similarity(target, movie)
+    rating = float(movie["vote_average"])               # Higher-rated movies get higher score
+
+    return round(genre_score * 2 + rating + cast_score * 0.5, 1)
 
 
 movies = load_movies()
@@ -33,7 +50,7 @@ for movie in movies:
         continue
 
     # More similar genres gives larger score
-    score = genre_similarity(target, movie)
+    score = recommendation_score(target, movie)
     recommendations.append((score, movie))
 
 # Sort recs by descending genre similarity
