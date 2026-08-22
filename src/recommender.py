@@ -1,4 +1,6 @@
 import csv
+import numpy as np
+from embeddings import cosine_similarity
 
 # Load movie dataset
 def load_movies():
@@ -23,12 +25,9 @@ def cast_similarity(movie_a, movie_b):
 
 
 # Add rating bonus to score
-def recommendation_score(target, movie):
-    genre_score = genre_similarity(target, movie)
-    cast_score = cast_similarity(target, movie)
-    rating = float(movie["vote_average"])                           # Higher-rated movies get higher score
-
-    return round(genre_score * 2 + rating + cast_score * 0.5, 1)
+def semantic_score(target_index, candidate_index, embeddings):
+    sim = cosine_similarity(embeddings[target_index], embeddings[candidate_index])
+    return round(sim, 4)
 
 
 # Turn comma-separated user input into set of lowercase strings
@@ -67,8 +66,9 @@ def passes_filters(movie, include_genres, exclude_genres, include_actors, exclud
 
 
 
-
+# Load data and overview embeddings
 movies = load_movies()
+embeddings = np.load("data/movie_embeddings.npy")
 
 title = input("Enter a movie name: ")
 matches = [movie for movie in movies if movie["title"].lower() == title.lower()]
@@ -77,7 +77,15 @@ if not matches:
     print("Movie not found in dataset.")
     exit()
 
-target = matches[0]
+target_index = None
+for i, movie in enumerate(movies):
+    if movie["title"].lower() == title.lower():
+        target_index = i                                                # Store target index for embedding lookup
+        target = movie
+        break
+if target_index is None:
+    print("Movie not found in dataset.")
+    exit()
 
 # Ask for users filters
 print("\n(Press Enter to skip any filter)")
@@ -96,15 +104,15 @@ min_rating = float(min_rating_input) if min_rating_input else None
 
 # Get all movies that match filters
 candidates = [
-    movie for movie in movies
+    (i, movie) for i, movie in enumerate(movies)
     if movie["id"] != target["id"]
     and passes_filters(movie, include_genres, exclude_genres, include_actors, exclude_actors, min_year, max_year, min_rating)
 ]
 
 # Provide recommendations from filtered candidates
 recommendations = []
-for movie in candidates:
-    score = recommendation_score(target, movie)
+for i, movie in candidates:
+    score = semantic_score(target_index, i, embeddings)
     recommendations.append((score, movie))
 
 recommendations.sort(key=lambda x:x[0], reverse=True)                   # Sort recs by descending genre similarity
