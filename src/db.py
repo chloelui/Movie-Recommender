@@ -17,21 +17,38 @@ def get_connection():
     )
 
 
-# Get existing or create new user profile
-def get_or_create_user(username):
+# Unique user functions
+def username_exists(username):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT 1 FROM users WHERE username = %s", (username,))
+    exists = cur.fetchone() is not None
+    cur.close()
+    conn.close()
+    return exists
+
+def create_user(username):
+    username = username.strip().lower()
+    if username_exists(username):
+        return None
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("INSERT INTO users (username) VALUES (%s) RETURNING id", (username,))
+    user_id = cur.fetchone()["id"]
+    conn.commit()
+    cur.close()
+    conn.close()
+    return user_id
+
+def get_user_id(username):
+    username = username.strip().lower()
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("SELECT id FROM users WHERE username = %s", (username,))
     row = cur.fetchone()
-    if row:
-        user_id = row["id"]
-    else:
-        cur.execute("INSERT INTO users (username) VALUES (%s) RETURNING id", (username,))
-        user_id = cur.fetchone()["id"]
-        conn.commit()
     cur.close()
     conn.close()
-    return user_id
+    return row["id"] if row else None
 
 
 # Record each recommendation

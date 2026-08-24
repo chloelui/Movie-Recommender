@@ -1,6 +1,7 @@
 import csv
 import numpy as np
 from embeddings import cosine_similarity
+from db import create_user, username_exists, get_user_id, log_recommendation, get_seen_movie_ids, get_disliked_movie_ids, record_feedback
 
 # Load movie dataset
 def load_movies():
@@ -71,6 +72,24 @@ def passes_filters(movie, include_genres, exclude_genres, include_actors, exclud
 movies = load_movies()
 embeddings = np.load("data/movie_embeddings.npy")
 
+# Access/create user profile
+choice = input("New user or returning? (new/returning): ").strip().lower()
+
+if choice == "new":
+    username = input("Choose a username: ").strip()
+    user_id = create_user(username)
+    while user_id is None:
+        username = input("That username is taken. Choose another: ").strip()
+        user_id = create_user(username)
+else:
+    username = input("Enter your username: ").strip()
+    user_id = get_user_id(username)
+    while user_id is None:
+        username = input("No account found with that name. Try again: ").strip()
+        user_id = get_user_id(username)
+seen_ids = get_seen_movie_ids(user_id)
+disliked_ids = get_disliked_movie_ids(user_id)
+
 title = input("Enter a movie name: ")
 matches = [movie for movie in movies if movie["title"].lower() == title.lower()]
 
@@ -106,7 +125,7 @@ min_rating = float(min_rating_input) if min_rating_input else None
 # Get all movies that match filters
 candidates = [
     (i, movie) for i, movie in enumerate(movies)
-    if movie["id"] != target["id"]
+    if movie["id"] != target["id"] and movie["id"] not in seen_ids and movie["id"] not in disliked_ids
     and passes_filters(movie, include_genres, exclude_genres, include_actors, exclude_actors, min_year, max_year, min_rating)
 ]
 
@@ -120,4 +139,16 @@ recommendations.sort(key=lambda x:x[0], reverse=True)                   # Sort r
 
 print(f"\nBecause you liked {target['title']}, we thought you might like:\n")
 for score, movie in recommendations[:5]:
+    log_recommendation(user_id, target, movie, score)                   # Log recommended movies
     print(f"{movie['title']} (genre similarity: {score})")
+
+# Optionally collect user feedback
+feedback_title = input("\nWant to rate one of these? Enter its title, or press Enter to skip: ").strip()
+if feedback_title:
+    rating_input = input("Rating (0-10): ").strip()
+    liked_input = input("Did you like it? (y/n): ").strip().lower()
+    match = next((m for _, m in recommendations[:5] if m["title"].lower() == feedback_title.lower()), None)
+    if match:
+        record_feedback(user_id, match["id"], match["title"], 
+                        rating=float(rating_input) if rating_input else None, 
+                        liked=(liked_input == "y") if liked_input else None)
