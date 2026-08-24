@@ -25,9 +25,10 @@ def cast_similarity(movie_a, movie_b):
 
 
 # Add rating bonus to score
-def semantic_score(target_index, candidate_index, embeddings):
+def hybrid_score(target, movie, target_index, candidate_index, embeddings):
     sim = cosine_similarity(embeddings[target_index], embeddings[candidate_index])
-    return round(sim, 4)
+    genre_score = genre_similarity(target, movie)
+    return round(sim * 10 + genre_score * 0.5, 2)
 
 
 # Turn comma-separated user input into set of lowercase strings
@@ -112,7 +113,7 @@ candidates = [
 # Provide recommendations from filtered candidates
 recommendations = []
 for i, movie in candidates:
-    score = semantic_score(target_index, i, embeddings)
+    score = hybrid_score(target, movie, target_index, i, embeddings)
     recommendations.append((score, movie))
 
 recommendations.sort(key=lambda x:x[0], reverse=True)                   # Sort recs by descending genre similarity
