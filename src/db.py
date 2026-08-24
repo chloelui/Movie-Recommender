@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Set up connection and all database functions
+# Set up schema connection
 def get_connection():
     return psycopg2.connect(
         dbname=os.getenv("DB_NAME"),
@@ -15,3 +15,74 @@ def get_connection():
         port=os.getenv("DB_PORT"),
         cursor_factory=RealDictCursor
     )
+
+
+# Get existing or create new user profile
+def get_or_create_user(username):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM users WHERE username = %s", (username,))
+    row = cur.fetchone()
+    if row:
+        user_id = row["id"]
+    else:
+        cur.execute("INSERT INTO users (username) VALUES (%s) RETURNING id", (username,))
+        user_id = cur.fetchone()["id"]
+        conn.commit()
+    cur.close()
+    conn.close()
+    return user_id
+
+
+# Record each recommendation
+def log_recommendation(user_id, source_movie, recommended_movie, score):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO recommendation_history (user_id, source_movie_id, source_movie_title, recommended_movie_id, recommended_movie_title, score)
+        VALUES (%s, %s, %s, %s, %s, %s)
+    """, (user_id, source_movie["id"], source_movie["title"], recommended_movie["id"], recommended_movie["title"], score))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+# Get unique movies already recommended to user
+def get_seen_movie_ids(user_id):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT DISTINCT recommended_movie_id AS movie_id FROM recommendation_history WHERE user_id = %s", (user_id,))
+    seen = {row["movie_id"] for row in cur.fetchall()}
+    cur.close()
+    conn.close()
+    return seen
+
+
+# Get unique movies that user dislikes
+def get_disliked_movie_ids(user_id):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT movie_id FROM user_movie_interactions WHERE user_id = %s AND liked = FALSE", (user_id,))
+    disliked = {row["movie_id"] for row in cur.fetchall()}
+    cur.close()
+    conn.close()
+    return disliked
+
+
+# Add/update feedback for a movie
+def record_feedback(user_id, movie_id, movie_title, watched=None, rating=None, liked=None):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO user_movie_interactions (user_id, movie_id, movie_title, watched, rating, liked)
+        VALUES (%s, %s, %s, %s, %s, %s)
+        ON CONFLICT (user_id, movie_id)
+        DO UPDATE SET
+            watched = COALESCE(EXCLUDED.watched, user_movie_interactions.watched),
+            rating = COALESCE(EXCLUDED.rating, user_movie_interactions.rating),
+            liked = COALESCE(EXCLUDED.liked, user_movie_interactions.liked),
+            updated_at = now()
+    """, (user_id, movie_id, movie_title, watched, rating, liked))
+    conn.commit()
+    cur.close()
+    conn.close()
