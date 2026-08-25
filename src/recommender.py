@@ -40,6 +40,18 @@ def parse_list_input(prompt):
     return {item.strip().lower() for item in raw.split(",")}
 
 
+# Repeatedly prompt until valid number or blank input
+def parse_optional_number(prompt, cast_func):
+    while True:
+        raw = input(prompt).strip()
+        if not raw:
+            return None
+        try:
+            return cast_func(raw)
+        except ValueError:
+            print("That doesn't look like a valid number — try again.")
+
+
 # Apply filters to whole movie list
 def passes_filters(movie, include_genres, exclude_genres, include_actors, exclude_actors, min_year, max_year, min_rating):
     genres = {g.lower() for g in movie["genres"].split("|")} if movie["genres"] else set()
@@ -90,22 +102,29 @@ else:
 seen_ids = get_watched_movie_ids(user_id)
 disliked_ids = get_disliked_movie_ids(user_id)
 
+
+# Find user's target movie
 title = input("Enter a movie name: ")
-matches = [movie for movie in movies if movie["title"].lower() == title.lower()]
+matches = [(i, movie) for i, movie in enumerate(movies) if movie["title"].lower() == title.lower()]
 
 if not matches:
     print("Movie not found in dataset.")
     exit()
 
-target_index = None
-for i, movie in enumerate(movies):
-    if movie["title"].lower() == title.lower():
-        target_index = i                                                # Store target index for embedding lookup
-        target = movie
-        break
-if target_index is None:
-    print("Movie not found in dataset.")
-    exit()
+if len(matches) == 1:
+    target_index, target = matches[0]
+else:
+    print("\nMultiple movies found with that title:")                   # If multiple movies w/ same title
+    for idx, (i, movie) in enumerate(matches, start=1):
+        year = movie["release_date"][:4] if movie["release_date"] else "N/A"
+        print(f"{idx}. {movie['title']} ({year})")
+
+    choice = input("Choose a number: ").strip()
+    while not (choice.isdigit() and 1 <= int(choice) <= len(matches)):
+        choice = input("Please enter a valid number: ").strip()
+
+    target_index, target = matches[int(choice) - 1]
+
 
 # Ask for users filters
 print("\n(Press Enter to skip any filter)")
@@ -113,14 +132,9 @@ include_genres = parse_list_input("Genres you want (comma-separated): ")
 exclude_genres = parse_list_input("Genres you don't want: ")
 include_actors = parse_list_input("Actors/actresses you want: ")
 exclude_actors = parse_list_input("Actors/actresses you don't want: ")
-
-min_year_input = input("Earliest release year: ").strip()
-max_year_input = input("Latest releast year: ").strip()
-min_rating_input = input("Minimum rating (0-10): ").strip()
-
-min_year = int(min_year_input) if min_year_input else None
-max_year = int(max_year_input) if max_year_input else None
-min_rating = float(min_rating_input) if min_rating_input else None
+min_year = parse_optional_number("Earliest release year: ", int)
+max_year = parse_optional_number("Latest release year: ", int)
+min_rating = parse_optional_number("Minimum rating (0-10): ", float)
 
 # Get all movies that match filters
 candidates = [
