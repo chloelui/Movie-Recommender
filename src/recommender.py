@@ -135,21 +135,54 @@ for i, movie in candidates:
     score = hybrid_score(target, movie, target_index, i, embeddings)
     recommendations.append((score, movie))
 
-recommendations.sort(key=lambda x:x[0], reverse=True)                   # Sort recs by descending genre similarity
+recommendations.sort(key=lambda x:x[0], reverse=True)                   # Sort entire list of candidates by descending genre similarity
 
-print(f"\nBecause you liked {target['title']}, we thought you might like:\n")
-for score, movie in recommendations[:5]:
-    log_recommendation(user_id, target, movie, score)                   # Log recommended movies
-    print(f"{movie['title']} (genre similarity: {score})")
+offset = 0
+shown_movies = []
+
+# Continue providing recommendations if user wants
+while True:
+    batch = recommendations[offset:offset + 5]                          # Go down list of recs
+
+    if not batch:
+        print("\nNo more recommendations available.")
+        break
+
+    print(f"\nBecause you liked {target['title']}, we thought you might like:\n")
+    for idx, (score, movie) in enumerate(batch, start=1):
+        log_recommendation(user_id, target, movie, score)
+        print(f"{idx}. {movie['title']} (score: {score})")
+
+    shown_movies.extend(batch)
+    offset += 5
+
+    action = input("\nEnter a number for details, 'more' for new recommendations, or 'done' to finish: ").strip().lower()
+    while action not in ("more", "done") and not (action.isdigit() and 1 <= int(action) <= len(batch)):
+        action = input("Please enter a valid number, 'more', or 'done': ").strip().lower()
+
+    while action.isdigit():
+        selected = batch[int(action) - 1][1]
+        year = selected["release_date"][:4] if selected["release_date"] else "N/A"
+        print(f"\n{selected['title']} ({year}) — rating: {selected['vote_average']}")
+        print(selected["overview"])
+        action = input("\nEnter another number for details, 'more' for new recommendations, or 'done' to finish: ").strip().lower()
+        while action not in ("more", "done") and not (action.isdigit() and 1 <= int(action) <= len(batch)):
+            action = input("Please enter a valid number, 'more', or 'done': ").strip().lower()
+
+    if action == "done":
+        break
+ 
 
 # Optionally collect user feedback
 feedback_title = input("\nWant to rate one of these? Enter its title, or press Enter to skip: ").strip()
 if feedback_title:
     rating_input = input("Rating (0-10): ").strip()
     liked_input = input("Did you like it? (y/n): ").strip().lower()
-    match = next((m for _, m in recommendations[:5] if m["title"].lower() == feedback_title.lower()), None)
+    match = next((m for _, m in shown_movies if m["title"].lower() == feedback_title.lower()), None)
     if match:
         record_feedback(user_id, match["id"], match["title"], 
                         watched=True,
                         rating=float(rating_input) if rating_input else None, 
                         liked=(liked_input == "y") if liked_input else None)
+    else:
+        print("That movie wasn't in the recommendations shown.")
