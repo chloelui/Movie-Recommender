@@ -64,15 +64,15 @@ def log_recommendation(user_id, source_movie, recommended_movie, score):
     conn.close()
 
 
-# Get unique movies already recommended to user
-def get_seen_movie_ids(user_id):
+# Get unique movies user already watched
+def get_watched_movie_ids(user_id):
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("SELECT DISTINCT recommended_movie_id AS movie_id FROM recommendation_history WHERE user_id = %s", (user_id,))
-    seen = {row["movie_id"] for row in cur.fetchall()}
+    cur.execute("SELECT movie_id FROM user_movie_interactions WHERE user_id = %s AND watched = TRUE", (user_id,))
+    watched = {row["movie_id"] for row in cur.fetchall()}
     cur.close()
     conn.close()
-    return seen
+    return watched
 
 
 # Get unique movies that user dislikes

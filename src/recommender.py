@@ -1,7 +1,7 @@
 import csv
 import numpy as np
 from embeddings import cosine_similarity
-from db import create_user, username_exists, get_user_id, log_recommendation, get_seen_movie_ids, get_disliked_movie_ids, record_feedback
+from db import create_user, username_exists, get_user_id, log_recommendation, get_watched_movie_ids, get_disliked_movie_ids, record_feedback
 
 # Load movie dataset
 def load_movies():
@@ -87,7 +87,7 @@ else:
     while user_id is None:
         username = input("No account found with that name. Try again: ").strip()
         user_id = get_user_id(username)
-seen_ids = get_seen_movie_ids(user_id)
+seen_ids = get_watched_movie_ids(user_id)
 disliked_ids = get_disliked_movie_ids(user_id)
 
 title = input("Enter a movie name: ")
@@ -150,5 +150,6 @@ if feedback_title:
     match = next((m for _, m in recommendations[:5] if m["title"].lower() == feedback_title.lower()), None)
     if match:
         record_feedback(user_id, match["id"], match["title"], 
+                        watched=True,
                         rating=float(rating_input) if rating_input else None, 
                         liked=(liked_input == "y") if liked_input else None)
