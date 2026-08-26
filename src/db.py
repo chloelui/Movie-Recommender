@@ -55,10 +55,12 @@ def get_user_id(username):
 def log_recommendation(user_id, source_movie, recommended_movie, score):
     conn = get_connection()
     cur = conn.cursor()
+    source_id = source_movie["id"] if source_movie else None
+    source_title = source_movie["title"] if source_movie else None
     cur.execute("""
         INSERT INTO recommendation_history (user_id, source_movie_id, source_movie_title, recommended_movie_id, recommended_movie_title, score)
         VALUES (%s, %s, %s, %s, %s, %s)
-    """, (user_id, source_movie["id"], source_movie["title"], recommended_movie["id"], recommended_movie["title"], score))
+    """, (user_id, source_id, source_title, recommended_movie["id"], recommended_movie["title"], score))
     conn.commit()
     cur.close()
     conn.close()
