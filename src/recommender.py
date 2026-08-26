@@ -1,7 +1,9 @@
 import csv
 import numpy as np
+import math
 from embeddings import cosine_similarity
 from db import create_user, username_exists, get_user_id, log_recommendation, get_watched_movie_ids, get_disliked_movie_ids, record_feedback
+from llm_parser import parse_preferences
 
 # Load movie dataset
 def load_movies():
@@ -25,31 +27,22 @@ def cast_similarity(movie_a, movie_b):
     return len(cast_a & cast_b) if cast_a and cast_b else 0
 
 
-# Add rating bonus to score
-def hybrid_score(target, movie, target_index, candidate_index, embeddings):
-    sim = cosine_similarity(embeddings[target_index], embeddings[candidate_index])
-    genre_score = genre_similarity(target, movie)
+# With target movie 
+def hybrid_score_with_anchor(target, movie, target_index, candidate_index, embeddings):
+    sim = cosine_similarity(embeddings[target_index], embeddings[candidate_index])             # Semantic similarity
+    genre_score = genre_similarity(target, movie)                                              # Genre similarity
     return round(sim * 10 + genre_score * 0.5, 2)
 
 
-# Turn comma-separated user input into set of lowercase strings
-def parse_list_input(prompt):
-    raw = input(prompt).strip()
-    if not raw:
-        return set()
-    return {item.strip().lower() for item in raw.split(",")}
+# No target movie
+def hybrid_score_without_anchor(movie, include_genres):
+    movie_genres = {g.lower() for g in movie["genres"].split("|")} if movie["genres"] else set()
+    genre_match = len(movie_genres & include_genres) if include_genres else 0
 
+    rating = float(movie["vote_average"]) if movie["vote_average"] else 0
+    popularity = float(movie["popularity"]) if movie["popularity"] else 0
 
-# Repeatedly prompt until valid number or blank input
-def parse_optional_number(prompt, cast_func):
-    while True:
-        raw = input(prompt).strip()
-        if not raw:
-            return None
-        try:
-            return cast_func(raw)
-        except ValueError:
-            print("That doesn't look like a valid number — try again.")
+    return round(genre_match * 3 + rating * 0.5 + math.log1p(popularity) * 0.3, 2)
 
 
 # Apply filters to whole movie list
@@ -103,58 +96,69 @@ seen_ids = get_watched_movie_ids(user_id)
 disliked_ids = get_disliked_movie_ids(user_id)
 
 
-# Find user's target movie
-title = input("Enter a movie name: ")
-matches = [(i, movie) for i, movie in enumerate(movies) if movie["title"].lower() == title.lower()]
+# Request user input
+user_text = input("\nTell me what you're in the mood for: ")
+parsed = parse_preferences(user_text)
 
-if not matches:
-    print("Movie not found in dataset.")
-    exit()
+include_genres = {g.lower() for g in parsed["include_genres"]}
+exclude_genres = {g.lower() for g in parsed["exclude_genres"]}
+include_actors = {g.lower() for g in parsed["include_actors"]}
+exclude_actors = {g.lower() for g in parsed["exclude_actors"]}
+min_year = parsed["min_year"]
+max_year = parsed["max_year"]
+min_rating = parsed["min_rating"]
 
-if len(matches) == 1:
-    target_index, target = matches[0]
-else:
-    print("\nMultiple movies found with that title:")                   # If multiple movies w/ same title
-    for idx, (i, movie) in enumerate(matches, start=1):
-        year = movie["release_date"][:4] if movie["release_date"] else "N/A"
-        print(f"{idx}. {movie['title']} ({year})")
+target, target_index = None, None
 
-    choice = input("Choose a number: ").strip()
-    while not (choice.isdigit() and 1 <= int(choice) <= len(matches)):
-        choice = input("Please enter a valid number: ").strip()
+title = parsed["target_movie"]                                          # If user mentioned specific movie
+if title:
+    import difflib
+    matches = [(i, movie) for i, movie in enumerate(movies) if movie["title"].lower() == title.lower()]
 
-    target_index, target = matches[int(choice) - 1]
+    if not matches:
+        all_titles = [movie["title"] for movie in movies]
+        close = difflib.get_close_matches(title, all_titles, n=1, cutoff=0.6)
+        if close:
+            matches = [(i, movie) for i, movie in enumerate(movies) if movie["title"] == close[0]]
 
+    if not matches:
+        print(f"(Couldn't find '{title}' in the dataset — continuing without it.)")
+    elif len(matches) == 1:
+        target_index, target = matches[0]
+    else:                                                               # Multiple movies with same name
+        print("\nMultiple movies found with that title:")
+        for idx, (i, movie) in enumerate(matches, start=1):
+            year = movie["release_date"][:4] if movie["release_date"] else "N/A"
+            print(f"{idx}. {movie['title']} ({year})")
+        choice = input("Choose a number: ").strip()
+        while not (choice.isdigit() and 1 <= int(choice) <= len(matches)):
+            choice = input("Please enter a valid number: ").strip()
+        target_index, target = matches[int(choice) - 1]
 
-# Ask for users filters
-print("\n(Press Enter to skip any filter)")
-include_genres = parse_list_input("Genres you want (comma-separated): ")
-exclude_genres = parse_list_input("Genres you don't want: ")
-include_actors = parse_list_input("Actors/actresses you want: ")
-exclude_actors = parse_list_input("Actors/actresses you don't want: ")
-min_year = parse_optional_number("Earliest release year: ", int)
-max_year = parse_optional_number("Latest release year: ", int)
-min_rating = parse_optional_number("Minimum rating (0-10): ", float)
 
 # Get all movies that match filters
 candidates = [
     (i, movie) for i, movie in enumerate(movies)
-    if movie["id"] != target["id"] and movie["id"] not in seen_ids and movie["id"] not in disliked_ids
+    if (target is None or movie["id"] != target["id"])
+    and movie["id"] not in seen_ids and movie["id"] not in disliked_ids
     and passes_filters(movie, include_genres, exclude_genres, include_actors, exclude_actors, min_year, max_year, min_rating)
 ]
 
 # Provide recommendations from filtered candidates
 recommendations = []
 for i, movie in candidates:
-    score = hybrid_score(target, movie, target_index, i, embeddings)
+    if target is not None:
+        score = hybrid_score_with_anchor(target, movie, target_index, i, embeddings)
+    else:
+        score = hybrid_score_without_anchor(movie, include_genres)
     recommendations.append((score, movie))
 
-recommendations.sort(key=lambda x:x[0], reverse=True)                   # Sort entire list of candidates by descending genre similarity
+recommendations.sort(key=lambda x: x[0], reverse=True)                   # Sort entire list of candidates by descending score
 
-offset = 0
-shown_movies = []
 
 # Continue providing recommendations if user wants
+offset = 0
+shown_movies = []
 while True:
     batch = recommendations[offset:offset + 5]                          # Go down list of recs
 
@@ -162,7 +166,11 @@ while True:
         print("\nNo more recommendations available.")
         break
 
-    print(f"\nBecause you liked {target['title']}, we thought you might like:\n")
+    if target is not None:
+        print(f"\nBecause you liked {target['title']}, we thought you might like:\n")
+    else:
+        print("\nBased on what you're looking for, here are some picks:\n")
+
     for idx, (score, movie) in enumerate(batch, start=1):
         log_recommendation(user_id, target, movie, score)
         print(f"{idx}. {movie['title']} (score: {score})")
