@@ -6,21 +6,25 @@ from embeddings import cosine_similarity
 
 
 def load_movies():
+    """Load full movie dataset."""
     with open("data/movies.csv", "r", encoding="utf-8") as file:
         return list(csv.DictReader(file))
 
 
 def load_embeddings():
+    """Load all text overview embeddings of movies."""
     return np.load("data/movie_embeddings.npy")
 
 
 def genre_similarity(movie_a, movie_b):
+    """Calculate number of shared genres between two movies."""
     genres_a = set(movie_a["genres"].split("|")) if movie_a["genres"] else set()
     genres_b = set(movie_b["genres"].split("|")) if movie_b["genres"] else set()
     return len(genres_a & genres_b) if genres_a and genres_b else 0
 
 
 def passes_filters(movie, include_genres, exclude_genres, include_actors, exclude_actors, min_year, max_year, min_rating):
+    """Check if movie passes all filters specified by user."""
     genres = {g.lower() for g in movie["genres"].split("|")} if movie["genres"] else set()
     cast = {c.lower() for c in movie["cast"].split("|")} if movie["cast"] else set()
 
@@ -44,12 +48,14 @@ def passes_filters(movie, include_genres, exclude_genres, include_actors, exclud
 
 
 def hybrid_score_with_anchor(target, movie, target_index, candidate_index, embeddings):
+    """Calculate score in case that user has given target movie."""
     sim = cosine_similarity(embeddings[target_index], embeddings[candidate_index])
     genre_score = genre_similarity(target, movie)
     return round(sim * 10 + genre_score * 0.5, 2)
 
 
 def hybrid_score_no_anchor(movie, include_genres):
+    """Calculate score in case that user has not given target movie."""
     movie_genres = {g.lower() for g in movie["genres"].split("|")} if movie["genres"] else set()
     genre_match = len(movie_genres & include_genres) if include_genres else 0
     rating = float(movie["vote_average"]) if movie["vote_average"] else 0
@@ -75,6 +81,7 @@ def find_movie_by_title(movies, title):
 
 
 def generate_recommendations(movies, embeddings, target_index, target, filters, seen_ids, disliked_ids):
+    """Create sorted list of recommended movies that considers filters."""
     include_genres = filters.get("include_genres", set())
     exclude_genres = filters.get("exclude_genres", set())
     include_actors = filters.get("include_actors", set())

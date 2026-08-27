@@ -25,7 +25,7 @@ def build_tools(session):
                                                    session["seen_ids"], session["disliked_ids"])
 
         # Save full ranked list + context so "more" and "log feedback" can reference it later
-        session["last_recommended"] = scored
+        session["last_scored"] = scored
         session["last_offset"] = 0
         session["last_target"] = target
 
