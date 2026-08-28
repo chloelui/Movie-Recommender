@@ -13,6 +13,20 @@ load_dotenv()
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 
+def classify_error(e):
+    """Decide whether error is worth retrying (rate limit, timeout, transient server error) 
+    or something that will fail identically every time (bad request, auth failure) and should 
+    just be raised immediately instead of retried."""
+    text = str(e)
+    code = getattr(e, "code", None) or getattr(e, "status_code", None)
+
+    if code == 429 or "429" in text or "RESOURCE_EXHAUSTED" in text:
+        return "rate_limit"
+    if code in (500, 502, 503, 504) or any(s in text for s in ("500", "502", "503", "504", "UNAVAILABLE", "DEADLINE_EXCEEDED")):
+        return "transient"
+    return "fatal"
+
+
 # Tool schemas (what Gemini's allowed to call and w/ what arguments)
 GET_RECOMMENDATIONS = types.FunctionDeclaration(
     name="get_recommendations",
@@ -97,6 +111,49 @@ Never imply a recommendation is "based on" a specific movie unless the match sta
 """
 
 
+# Handle possible errors with Gemini API in chat
+class ChatUnavailableError(Exception):
+    """Raised when Gemini is unreachable after all retries and shows friendly message instead of crashing."""
+    pass
+
+
+MAX_RETRIES = 3
+BASE_WAIT_SECONDS = 30
+
+
+def call_gemini(history):
+    """Calls generate_content with retry-with-backoff for rate limits/transient errors. Fatal errors 
+    (bad request, bad API key) are raised immediately."""
+    last_error = None
+
+    for attempt in range(MAX_RETRIES):
+        try:
+            return client.models.generate_content(
+                model="gemini-3.6-flash",
+                contents=history,
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_INSTRUCTION,
+                    tools=[TOOL],
+                    tool_config=types.ToolConfig(
+                        function_calling_config=types.FunctionCallingConfig(mode="AUTO")
+                    )
+                )
+            )
+        except ClientError as e:
+            kind = classify_error(e)
+            last_error = e
+
+            if kind == "fatal":
+                raise
+
+            if attempt < MAX_RETRIES - 1:
+                wait = BASE_WAIT_SECONDS * (attempt + 1)  
+                print(f"(Having trouble reaching the model — retrying in {wait}s...)")
+                time.sleep(wait)
+
+    raise ChatUnavailableError(last_error)
+
+
 def login():
     choice = input("New user or returning? (new/returning): ").strip().lower()
     if choice == "new":
@@ -115,25 +172,16 @@ def login():
 
 
 def send_and_handle(history, tool_functions):
-    """Sends convo to Gemini, executes any tool calls, feeds results back, 
-    and returns once Gemini produces plain-text reply."""
+    """Sends convo to Gemini, executes any tool calls, feeds results back, and returns once Gemini produces plain-text reply."""
     while True:
-        response = client.models.generate_content(
-            model="gemini-3.6-flash",
-            contents=history,
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_INSTRUCTION,
-                tools=[TOOL],
-                tool_config=types.ToolConfig(function_calling_config=types.FunctionCallingConfig(mode="AUTO"))
-            )
-        )
+        response = call_gemini(history)
 
         model_content = response.candidates[0].content
         history.append(model_content)
 
         function_calls = [p.function_call for p in model_content.parts if p.function_call]
         if not function_calls:
-            return response.text    # plain conversational reply - done for this turn
+            return response.text    # plain conversational reply first
 
         result_parts = []
         for fc in function_calls:
@@ -142,7 +190,7 @@ def send_and_handle(history, tool_functions):
             result_parts.append(types.Part.from_function_response(name=fc.name, response=result))
 
         history.append(types.Content(role="user", parts=result_parts))
-        # loop again — Gemini now sees tool's result and writes actual reply
+        # loop again for gemini to write actual reply
 
 
 def main():
@@ -163,15 +211,25 @@ def main():
     history = []
     while True:
         user_input = input("You: ").strip()
-        if user_input.lower() in ("quit", "exit", "bye", "stop"):
+        if user_input.lower() in ("quit", "exit", "bye"):
             print("Bot: See you next time!")
             break
         if not user_input:
             continue
-
         history.append(types.Content(role="user", parts=[types.Part(text=user_input)]))
-        reply = send_and_handle(history, tool_functions)
-        print(f"Bot: {reply}\n")
+
+        try:
+            reply = send_and_handle(history, tool_functions)
+            print(f"Bot: {reply}\n")
+        except ChatUnavailableError:
+            print("Bot: Sorry, I'm having trouble connecting right now. Try sending your last message again in a minute.\n")
+            history.pop()
+        except ClientError as e:
+            if classify_error(e) == "fatal":
+                print("Bot: Something went wrong on my end that a retry won't fix. You may need to check your API key or request setup.\n")
+                history.pop()
+            else:
+                raise
 
 
 
