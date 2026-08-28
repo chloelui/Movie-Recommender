@@ -17,7 +17,13 @@ client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 GET_RECOMMENDATIONS = types.FunctionDeclaration(
     name="get_recommendations",
     description="Find movie recommendations. Call this whenever the user wants something to watch, "
-                "whether or not they gave a specific anchor movie, genre, actor, year, or rating.",
+                "whether or not they gave a specific anchor movie, genre, actor, year, or rating. "
+                "The result includes a 'title_match' field describing how the anchor title (if any) "
+                "was resolved: 'exact' (confident match, safe to treat as the anchor), 'fuzzy' "
+                "(only a guessed match was found — you MUST tell the user what you guessed and ask "
+                "them to confirm before treating it as the anchor on a future turn), 'not_found' "
+                "(no match at all — tell the user plainly and offer genre/filter-based picks instead), "
+                "or 'no_query' (user didn't name a movie, nothing to report).",
     parameters={
         "type": "object",
         "properties": {
@@ -68,13 +74,26 @@ TOOL = types.Tool(function_declarations=[GET_RECOMMENDATIONS, MORE_RECOMMENDATIO
 
 SYSTEM_INSTRUCTION = """You are a friendly, conversational movie recommendation assistant.
 
-The user drives the conversation — don't force a fixed menu of options. They might want recommendations, want to look 
-up a specific movie, want to log feedback on something they already watched (even if you never recommended it), or just chat.
+The user drives the conversation — don't force a fixed menu of options. They might want
+recommendations, want to look up a specific movie, want to log feedback on something they
+already watched (even if you never recommended it), or just chat.
 
-Use the available tools whenever the user's message calls for one. After a tool returns results, summarize them 
-naturally in your own words rather than dumping raw data, and, where it fits, casually mention what they could do next 
-(e.g. see more, get details on one, or let you know if they end up watching one) — but only as a natural aside, 
-not a rigid prompt.
+Use the available tools whenever the user's message calls for one. After a tool returns
+results, summarize them naturally in your own words rather than dumping raw data.
+
+IMPORTANT: when get_recommendations returns a 'title_match' field, check its status before
+you say anything about an anchor movie:
+- 'exact': fine to proceed normally, no need to mention the matching process at all.
+- 'fuzzy': you did NOT confidently find that movie. Say something like "I couldn't find an
+  exact match for '<queried_title>' — did you mean '<matched_title>'?" and give the
+  recommendations you already have (which are genre/filter-based this turn, not anchored),
+  making clear they're not yet based on that specific movie. Ask the user to confirm before
+  you use it as an anchor going forward.
+- 'not_found': tell the user plainly you couldn't find that title in your dataset, and that
+  you're giving genre/filter-based picks instead.
+- 'no_query': say nothing about title matching.
+
+Never imply a recommendation is "based on" a specific movie unless the match status was 'exact'.
 """
 
 

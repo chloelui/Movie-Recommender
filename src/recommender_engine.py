@@ -64,20 +64,29 @@ def hybrid_score_no_anchor(movie, include_genres):
 
 
 def find_movie_by_title(movies, title):
-    """Exact match first, then fallback. Returns (index, movie) or (None, None)."""
+    """Exact match first, then fallback. Returns dict describing exactly what happened, so callers 
+    can tell difference between confident match, guessed match, and no match."""
     if not title:
-        return None, None
+        return {"status": "no_query", "index": None, "movie": None,
+                "matched_title": None, "queried_title": None}
+
     matches = [(i, m) for i, m in enumerate(movies) if m["title"].lower() == title.lower()]
     if matches:
-        return matches[0]
+        index, movie = matches[0]
+        return {"status": "exact", "index": index, "movie": movie,
+                "matched_title": movie["title"], "queried_title": title}
 
     all_titles = [m["title"] for m in movies]
     close = difflib.get_close_matches(title, all_titles, n=1, cutoff=0.6)
     if close:
         matches = [(i, m) for i, m in enumerate(movies) if m["title"] == close[0]]
         if matches:
-            return matches[0]
-    return None, None
+            index, movie = matches[0]
+            return {"status": "fuzzy", "index": index, "movie": movie,
+                    "matched_title": movie["title"], "queried_title": title}
+
+    return {"status": "not_found", "index": None, "movie": None,
+            "matched_title": None, "queried_title": title}
 
 
 def generate_recommendations(movies, embeddings, target_index, target, filters, seen_ids, disliked_ids):

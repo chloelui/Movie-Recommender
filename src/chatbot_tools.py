@@ -11,7 +11,15 @@ def build_tools(session):
         movies = session["movies"]
         embeddings = session["embeddings"]
 
-        target_index, target = find_movie_by_title(movies, target_movie) if target_movie else (None, None)
+        match = find_movie_by_title(movies, target_movie) if target_movie else \
+            {"status": "no_query", "index": None, "movie": None, "matched_title": None, "queried_title": None}
+
+        target_index, target = match["index"], match["movie"]
+
+        # Report fuzzy matches back and let recommendations continue on genre/filter alone this turn
+        if match["status"] == "fuzzy":
+            target_index, target = None, None
+
         filters = {
             "include_genres": {g.lower() for g in (include_genres or [])},
             "exclude_genres": {g.lower() for g in (exclude_genres or [])},
@@ -21,15 +29,23 @@ def build_tools(session):
             "max_year": max_year,
             "min_rating": min_rating,
         }
-        scored = generate_recommendations(movies, embeddings, target_index, target, filters, 
-                                                   session["seen_ids"], session["disliked_ids"])
 
-        # Save full ranked list + context so "more" and "log feedback" can reference it later
+        scored = generate_recommendations(
+            movies, embeddings, target_index, target, filters,
+            session["seen_ids"], session["disliked_ids"]
+        )
+
         session["last_scored"] = scored
         session["last_offset"] = 0
         session["last_target"] = target
 
-        return _take_next_batch(session)
+        result = _take_next_batch(session)
+        result["title_match"] = {
+            "status": match["status"],
+            "queried_title": match["queried_title"],
+            "matched_title": match["matched_title"],
+        }
+        return result
 
 
     def more_recommendations():
