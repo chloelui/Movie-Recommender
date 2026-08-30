@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 from db import create_user, get_user_id, get_watched_movie_ids, get_disliked_movie_ids
 from recommender_engine import load_movies, load_embeddings
-from chatbot_tools import build_tools
+from chatbot_tools import build_tools, default_filters
 
 load_dotenv()
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
@@ -30,19 +30,18 @@ def classify_error(e):
 # Tool schemas (what Gemini's allowed to call and w/ what arguments)
 GET_RECOMMENDATIONS = types.FunctionDeclaration(
     name="get_recommendations",
-    description="Find movie recommendations. Call this whenever the user wants something to watch, "
-                "whether or not they gave a specific anchor movie, genre, actor, year, or rating. "
-                "The result includes a 'title_match' field describing how the anchor title (if any) "
-                "was resolved: 'exact' (confident match, safe to treat as the anchor), 'fuzzy' "
-                "(only a guessed match was found — you MUST tell the user what you guessed and ask "
-                "them to confirm before treating it as the anchor on a future turn), 'not_found' "
-                "(no match at all — tell the user plainly and offer genre/filter-based picks instead), "
-                "or 'no_query' (user didn't name a movie, nothing to report).",
+    description="Find or refine movie recommendations. Filters accumulate across turns automatically — only pass the fields " 
+                "the user actually just mentioned; do NOT re-send filters from earlier in the conversation, the system "
+                "remembers them for you. Set reset=true ONLY when the user clearly wants to abandon the current search "
+                "and start a completely different one (e.g. 'forget that, show me horror movies instead'), not for ordinary "
+                "refinements like 'actually nothing after 2010'. The result includes 'active_filters_summary' showing the full " 
+                "current filter state, and 'title_match' describing how an anchor title (if mentioned this turn) was resolved: " 
+                "'exact', 'fuzzy' (confirm with the user before trusting it as the anchor), 'not_found', or 'no_query'.",
     parameters={
         "type": "object",
         "properties": {
             "target_movie": {"type": "string", "nullable": True,
-                              "description": "A specific movie they liked, if mentioned. Otherwise omit."},
+                              "description": "A specific movie they liked, only if newly mentioned this turn."},
             "include_genres": {"type": "array", "items": {"type": "string"}},
             "exclude_genres": {"type": "array", "items": {"type": "string"}},
             "include_actors": {"type": "array", "items": {"type": "string"}},
@@ -50,6 +49,8 @@ GET_RECOMMENDATIONS = types.FunctionDeclaration(
             "min_year": {"type": "integer", "nullable": True},
             "max_year": {"type": "integer", "nullable": True},
             "min_rating": {"type": "number", "nullable": True},
+            "reset": {"type": "boolean", "nullable": True,
+                      "description": "True only to wipe all prior filters and start a brand new search."},
         }
     }
 )
@@ -88,24 +89,26 @@ TOOL = types.Tool(function_declarations=[GET_RECOMMENDATIONS, MORE_RECOMMENDATIO
 
 SYSTEM_INSTRUCTION = """You are a friendly, conversational movie recommendation assistant.
 
-The user drives the conversation — don't force a fixed menu of options. They might want
-recommendations, want to look up a specific movie, want to log feedback on something they
-already watched (even if you never recommended it), or just chat.
+The user drives the conversation — don't force a fixed menu of options. They might want recommendations, want to look up 
+a specific movie, want to log feedback on something they already watched (even if you never recommended it), or just chat.
 
-Use the available tools whenever the user's message calls for one. After a tool returns
-results, summarize them naturally in your own words rather than dumping raw data.
+Filters accumulate automatically across the conversation — when calling get_recommendations, only include the fields 
+the user is mentioning right now. A follow-up like "actually nothing after 2010" should be called with ONLY max_year set while
+still remembering what the user requested as filters in previous turns, not by re-specifying genres or actors from earlier turns. 
+Check the 'active_filters_summary' in the tool's response if you want to confirm what's currently active before describing it 
+to the user. Only set reset=true when the user is clearly abandoning the current search for an unrelated one.
 
-IMPORTANT: when get_recommendations returns a 'title_match' field, check its status before
-you say anything about an anchor movie:
+Use the available tools whenever the user's message calls for one. After a tool returns results, summarize them naturally 
+in your own words rather than dumping raw data.
+
+IMPORTANT: when get_recommendations returns a 'title_match' field, check its status before you say anything about an anchor movie:
 - 'exact': fine to proceed normally, no need to mention the matching process at all.
 - 'fuzzy': you did NOT confidently find that movie. Say something like "I couldn't find an
   exact match for '<queried_title>' — did you mean '<matched_title>'?" and give the
-  recommendations you already have (which are genre/filter-based this turn, not anchored),
-  making clear they're not yet based on that specific movie. Ask the user to confirm before
-  you use it as an anchor going forward.
-- 'not_found': tell the user plainly you couldn't find that title in your dataset, and that
-  you're giving genre/filter-based picks instead.
-- 'no_query': say nothing about title matching.
+  recommendations you already have (genre/filter-based this turn, not anchored), making
+  clear they're not yet based on that specific movie.
+- 'not_found': tell the user plainly you couldn't find that title, and that you're giving
+  genre/filter-based picks instead.
 
 Never imply a recommendation is "based on" a specific movie unless the match status was 'exact'.
 """
@@ -202,6 +205,7 @@ def main():
         "embeddings": load_embeddings(),
         "seen_ids": get_watched_movie_ids(user_id),
         "disliked_ids": get_disliked_movie_ids(user_id),
+        "active_filters": default_filters(),
     }
     tool_functions = build_tools(session)
 
@@ -211,7 +215,7 @@ def main():
     history = []
     while True:
         user_input = input("You: ").strip()
-        if user_input.lower() in ("quit", "exit", "bye"):
+        if user_input.lower() in ("quit", "exit", "bye", "done", "goodbye", "stop", "leave"):
             print("Bot: See you next time!")
             break
         if not user_input:

@@ -2,36 +2,78 @@ from db import log_recommendation, record_feedback
 from recommender_engine import find_movie_by_title, generate_recommendations
 
 
+def default_filters():
+    """Shape of empty search to initialize a session and to wipe filters when the user explicitly starts over."""
+    return {
+        "target_movie": None,
+        "include_genres": set(),
+        "exclude_genres": set(),
+        "include_actors": set(),
+        "exclude_actors": set(),
+        "min_year": None,
+        "max_year": None,
+        "min_rating": None,
+    }
+
+
+def merge_filters(active, updates):
+    """Merges this turn's explicitly-provided fields into accumulated filter state. Only keys actually 
+    present in `updates` are touched. Fields user didn't mention this turn are left same."""
+    for key in ("include_genres", "exclude_genres", "include_actors", "exclude_actors"):
+        if key in updates and updates[key]:
+            active[key] |= {v.lower() for v in updates[key]}
+
+    # Keep most recent filters if contradict previous filters
+    if "include_genres" in updates and updates["include_genres"]:
+        active["exclude_genres"] -= active["include_genres"]
+    if "exclude_genres" in updates and updates["exclude_genres"]:
+        active["include_genres"] -= active["exclude_genres"]
+    if "include_actors" in updates and updates["include_actors"]:
+        active["exclude_actors"] -= active["include_actors"]
+    if "exclude_actors" in updates and updates["exclude_actors"]:
+        active["include_actors"] -= active["exclude_actors"]
+
+    for key in ("min_year", "max_year", "min_rating"):
+        if key in updates and updates[key] is not None:
+            active[key] = updates[key]
+
+    if "target_movie" in updates and updates["target_movie"]:
+        active["target_movie"] = updates["target_movie"]
+
+    return active
+
+
 def build_tools(session):
     """Returns the four callable actions, all closed over user's session state
     (movies, embeddings, user_id, what's been shown so far)."""
+    
+    # Initialize active filters when session starts
+    session.setdefault("active_filters", default_filters())
 
-    def get_recommendations(target_movie="", include_genres=None, exclude_genres=None, include_actors=None,
-                            exclude_actors=None, min_year=None, max_year=None, min_rating=None):
+    def get_recommendations(**kwargs):
         movies = session["movies"]
         embeddings = session["embeddings"]
 
-        match = find_movie_by_title(movies, target_movie) if target_movie else \
+        reset = kwargs.pop("reset", False)
+        if reset:
+            session["active_filters"] = default_filters()
+
+        active = merge_filters(session["active_filters"], kwargs)
+
+        # Only report title match if user mentioned movie this turn
+        title_mentioned_this_turn = "target_movie" in kwargs and kwargs["target_movie"]
+
+        match = find_movie_by_title(movies, active["target_movie"]) if active["target_movie"] else \
             {"status": "no_query", "index": None, "movie": None, "matched_title": None, "queried_title": None}
 
         target_index, target = match["index"], match["movie"]
 
-        # Report fuzzy matches back and let recommendations continue on genre/filter alone this turn
         if match["status"] == "fuzzy":
             target_index, target = None, None
-
-        filters = {
-            "include_genres": {g.lower() for g in (include_genres or [])},
-            "exclude_genres": {g.lower() for g in (exclude_genres or [])},
-            "include_actors": {a.lower() for a in (include_actors or [])},
-            "exclude_actors": {a.lower() for a in (exclude_actors or [])},
-            "min_year": min_year,
-            "max_year": max_year,
-            "min_rating": min_rating,
-        }
+            active["target_movie"] = None  # don't re-guess bad anchor on future turns
 
         scored = generate_recommendations(
-            movies, embeddings, target_index, target, filters,
+            movies, embeddings, target_index, target, active,
             session["seen_ids"], session["disliked_ids"]
         )
 
@@ -40,10 +82,21 @@ def build_tools(session):
         session["last_target"] = target
 
         result = _take_next_batch(session)
-        result["title_match"] = {
-            "status": match["status"],
-            "queried_title": match["queried_title"],
-            "matched_title": match["matched_title"],
+        if title_mentioned_this_turn:
+            result["title_match"] = {
+                "status": match["status"],
+                "queried_title": match["queried_title"],
+                "matched_title": match["matched_title"],
+            }
+        result["active_filters_summary"] = {
+            "target_movie": active["target_movie"],
+            "include_genres": sorted(active["include_genres"]),
+            "exclude_genres": sorted(active["exclude_genres"]),
+            "include_actors": sorted(active["include_actors"]),
+            "exclude_actors": sorted(active["exclude_actors"]),
+            "min_year": active["min_year"],
+            "max_year": active["max_year"],
+            "min_rating": active["min_rating"],
         }
         return result
 
