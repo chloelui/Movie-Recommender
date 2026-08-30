@@ -11,6 +11,8 @@ HEADERS = {
     "Authorization": f"Bearer {TMDB_TOKEN}"
 }
 
+TIMEOUT = (5, 15)
+
 
 # Access API and movies
 def search_movies(query):
@@ -20,7 +22,7 @@ def search_movies(query):
         "query": query
     }
 
-    response = requests.get(url,headers=HEADERS,params=params)
+    response = requests.get(url, headers=HEADERS, params=params, timeout=TIMEOUT)
     response.raise_for_status()
 
     return response.json()["results"]
@@ -30,7 +32,7 @@ def search_movies(query):
 def get_movie(movie_id):
     url = f"{BASE_URL}/movie/{movie_id}"
 
-    response = requests.get(url,headers=HEADERS)
+    response = requests.get(url, headers=HEADERS, timeout=TIMEOUT)
     response.raise_for_status()
 
     return response.json()
@@ -40,7 +42,7 @@ def get_movie(movie_id):
 def get_movie_credits(movie_id):
     url = f"{BASE_URL}/movie/{movie_id}/credits"
 
-    response = requests.get(url,headers=HEADERS)
+    response = requests.get(url, headers=HEADERS, timeout=TIMEOUT)
     response.raise_for_status()
 
     return response.json()
@@ -51,19 +53,20 @@ def discover_movies(page=1, **kwargs):
     url = f"{BASE_URL}/discover/movie"
 
     params = {"page": page, "sort_by": "popularity.desc"}
-    params.update(kwargs)   
+    params.update(kwargs)
 
-    response = requests.get(url, headers=HEADERS, params=params)
+    response = requests.get(url, headers=HEADERS, params=params, timeout=TIMEOUT)
     response.raise_for_status()
 
-    return response.json()["results"]
+    data = response.json()
+    return data["results"], data["total_pages"], data["total_results"]
 
 
 # Get TMDB's list of genres
 def get_genres():
     url = f"{BASE_URL}/genre/movie/list"
 
-    response = requests.get(url,headers=HEADERS)
+    response = requests.get(url, headers=HEADERS, timeout=TIMEOUT)
     response.raise_for_status()
 
     return response.json()["genres"]
