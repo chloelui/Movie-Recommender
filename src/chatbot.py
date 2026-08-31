@@ -36,7 +36,12 @@ GET_RECOMMENDATIONS = types.FunctionDeclaration(
                 "and start a completely different one (e.g. 'forget that, show me horror movies instead'), not for ordinary "
                 "refinements like 'actually nothing after 2010'. The result includes 'active_filters_summary' showing the full " 
                 "current filter state, and 'title_match' describing how an anchor title (if mentioned this turn) was resolved: " 
-                "'exact', 'fuzzy' (confirm with the user before trusting it as the anchor), 'not_found', or 'no_query'.",
+                "'exact', 'fuzzy' (confirm with the user before trusting it as the anchor), 'not_found', or 'no_query'."
+                "The result may also include 'filter_validation' when a genre or actor you specified didn't exactly match the " \
+                "dataset: 'corrected' lists (your_value, actual_value) pairs that were auto-corrected via fuzzy match — mention these "
+                "briefly so the user knows what was actually used (e.g. 'I read that as \"science fiction\"'). 'unmatched' lists values " \
+                "that don't exist in the dataset at all — tell the user plainly that filter wasn't applied, rather than letting "
+                "them think zero results means nothing matches their taste.",
     parameters={
         "type": "object",
         "properties": {
@@ -109,6 +114,11 @@ IMPORTANT: when get_recommendations returns a 'title_match' field, check its sta
   clear they're not yet based on that specific movie.
 - 'not_found': tell the user plainly you couldn't find that title, and that you're giving
   genre/filter-based picks instead.
+
+IMPORTANT: if get_recommendations returns 'filter_validation', don't stay silent about it. For 'corrected' values, briefly confirm 
+what you understood (e.g. "I matched 'scifi' to 'science fiction'"). For 'unmatched' values, clearly tell the user that 
+specific genre or actor wasn't found in the dataset and wasn't applied as a filter — this matters because a result of 
+"no recommendations found" should never be confused with "your filter was silently ignored."
 
 Never imply a recommendation is "based on" a specific movie unless the match status was 'exact'.
 """

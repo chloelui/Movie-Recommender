@@ -1,5 +1,5 @@
 from db import log_recommendation, record_feedback
-from recommender_engine import find_movie_by_title, generate_recommendations
+from recommender_engine import find_movie_by_title, generate_recommendations, build_actor_vocab, build_genre_vocab, validate_values
 
 
 def default_filters():
@@ -47,8 +47,10 @@ def build_tools(session):
     """Returns the four callable actions, all closed over user's session state
     (movies, embeddings, user_id, what's been shown so far)."""
     
-    # Initialize active filters when session starts
+    # Initialize reusables when session starts
     session.setdefault("active_filters", default_filters())
+    session.setdefault("genre_vocab", build_genre_vocab(session["movies"]))
+    session.setdefault("actor_vocab", build_actor_vocab(session["movies"]))
 
     def get_recommendations(**kwargs):
         movies = session["movies"]
@@ -57,6 +59,19 @@ def build_tools(session):
         reset = kwargs.pop("reset", False)
         if reset:
             session["active_filters"] = default_filters()
+
+        # Validate genre/actor values before merging them into filters
+        validation_report = {}
+        for field, vocab_key in [("include_genres", "genre_vocab"), ("exclude_genres", "genre_vocab"), 
+                                 ("include_actors", "actor_vocab"), ("exclude_actors", "actor_vocab"),]:
+            if field in kwargs and kwargs[field]:
+                val = validate_values(kwargs[field], session[vocab_key])
+                kwargs[field] = val["resolved"]  # only real/corrected values proceed to filtering
+                if val["corrected"] or val["unmatched"]:
+                    validation_report[field] = {
+                        "corrected": val["corrected"],
+                        "unmatched": val["unmatched"],
+                    }
 
         active = merge_filters(session["active_filters"], kwargs)
 
@@ -98,6 +113,8 @@ def build_tools(session):
             "max_year": active["max_year"],
             "min_rating": active["min_rating"],
         }
+        if validation_report:
+            result["filter_validation"] = validation_report
         return result
 
 

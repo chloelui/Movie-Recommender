@@ -16,6 +16,53 @@ def load_embeddings():
     return np.load("data/movie_embeddings.npy")
 
 
+def validate_values(requested, vocab, cutoff=0.75):
+    """Checks list of requested genre/actor strings against dataset. Returns which ones matched exactly, 
+    which close enough to auto-correct, and which couldn't be matched. Caller can report this back instead 
+    of silently filtering to zero results."""
+    exact = []
+    corrected = []   # list of (original, corrected) tuples
+    unmatched = []
+
+    for value in requested:
+        value_lower = value.lower()
+        if value_lower in vocab:
+            exact.append(value_lower)
+            continue
+
+        close = difflib.get_close_matches(value_lower, vocab, n=1, cutoff=cutoff)
+        if close:
+            corrected.append((value, close[0]))
+        else:
+            unmatched.append(value)
+
+    resolved = exact + [c[1] for c in corrected]
+    return {
+        "resolved": resolved,        # actual values safe to use for filtering
+        "exact": exact,
+        "corrected": corrected,
+        "unmatched": unmatched,
+    }
+
+
+def build_genre_vocab(movies):
+    """All distinct genre strings that actually exist in the dataset, lowercased."""
+    vocab = set()
+    for movie in movies:
+        if movie["genres"]:
+            vocab.update(g.lower() for g in movie["genres"].split("|"))
+    return vocab
+
+
+def build_actor_vocab(movies):
+    """All distinct actor names that actually exist in the dataset, lowercased."""
+    vocab = set()
+    for movie in movies:
+        if movie["cast"]:
+            vocab.update(a.lower() for a in movie["cast"].split("|"))
+    return vocab
+
+
 def genre_similarity(movie_a, movie_b):
     """Calculate number of shared genres between two movies."""
     genres_a = set(movie_a["genres"].split("|")) if movie_a["genres"] else set()
