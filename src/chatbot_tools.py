@@ -17,30 +17,69 @@ def default_filters():
 
 
 def merge_filters(active, updates):
-    """Merges this turn's explicitly-provided fields into accumulated filter state. Only keys actually 
-    present in `updates` are touched. Fields user didn't mention this turn are left same."""
+    """Merges this turn's fields into accumulated filters. Returns (active, conflicts), so caller can tell the user what happened 
+    rather than silently dropping one side of contradiction."""
+    conflicts = []
+
     for key in ("include_genres", "exclude_genres", "include_actors", "exclude_actors"):
         if key in updates and updates[key]:
             active[key] |= {v.lower() for v in updates[key]}
 
-    # Keep most recent filters if contradict previous filters
-    if "include_genres" in updates and updates["include_genres"]:
-        active["exclude_genres"] -= active["include_genres"]
-    if "exclude_genres" in updates and updates["exclude_genres"]:
-        active["include_genres"] -= active["exclude_genres"]
-    if "include_actors" in updates and updates["include_actors"]:
-        active["exclude_actors"] -= active["include_actors"]
-    if "exclude_actors" in updates and updates["exclude_actors"]:
-        active["include_actors"] -= active["exclude_actors"]
+    # Resolve genre contradictions to keep most recent one
+    genre_overlap = active["include_genres"] & active["exclude_genres"]
+    if genre_overlap:
+        include_updated_now = bool(updates.get("include_genres"))
+        exclude_updated_now = bool(updates.get("exclude_genres"))
+
+        if exclude_updated_now and not include_updated_now:
+            # user just excluded something they previously included
+            active["include_genres"] -= genre_overlap
+            resolution = "excluded"
+        else:
+            # newly included wins, or both/neither updated this turn
+            active["exclude_genres"] -= genre_overlap
+            resolution = "included"
+
+        conflicts.append({
+            "field": "genres",
+            "values": sorted(genre_overlap),
+            "resolved_as": resolution,
+        })
+
+    actor_overlap = active["include_actors"] & active["exclude_actors"]
+    if actor_overlap:
+        include_updated_now = bool(updates.get("include_actors"))
+        exclude_updated_now = bool(updates.get("exclude_actors"))
+
+        if exclude_updated_now and not include_updated_now:
+            active["include_actors"] -= actor_overlap
+            resolution = "excluded"
+        else:
+            active["exclude_actors"] -= actor_overlap
+            resolution = "included"
+
+        conflicts.append({
+            "field": "actors",
+            "values": sorted(actor_overlap),
+            "resolved_as": resolution,
+        })
 
     for key in ("min_year", "max_year", "min_rating"):
         if key in updates and updates[key] is not None:
             active[key] = updates[key]
 
+    # min_year after max_year or min_rating that can't be satisfied
+    if active["min_year"] is not None and active["max_year"] is not None and active["min_year"] > active["max_year"]:
+        conflicts.append({
+            "field": "year_range",
+            "values": [active["min_year"], active["max_year"]],
+            "resolved_as": "unresolved",  # left as-is to flag to user
+        })
+
     if "target_movie" in updates and updates["target_movie"]:
         active["target_movie"] = updates["target_movie"]
 
-    return active
+    return active, conflicts
 
 
 def build_tools(session):
@@ -73,7 +112,7 @@ def build_tools(session):
                         "unmatched": val["unmatched"],
                     }
 
-        active = merge_filters(session["active_filters"], kwargs)
+        active, conflicts = merge_filters(session["active_filters"], kwargs)
 
         # Only report title match if user mentioned movie this turn
         title_mentioned_this_turn = "target_movie" in kwargs and kwargs["target_movie"]
@@ -115,6 +154,8 @@ def build_tools(session):
         }
         if validation_report:
             result["filter_validation"] = validation_report
+        if conflicts:
+            result["filter_conflicts"] = conflicts
         return result
 
 

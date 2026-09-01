@@ -37,11 +37,18 @@ GET_RECOMMENDATIONS = types.FunctionDeclaration(
                 "refinements like 'actually nothing after 2010'. The result includes 'active_filters_summary' showing the full " 
                 "current filter state, and 'title_match' describing how an anchor title (if mentioned this turn) was resolved: " 
                 "'exact', 'fuzzy' (confirm with the user before trusting it as the anchor), 'not_found', or 'no_query'."
+
                 "The result may also include 'filter_validation' when a genre or actor you specified didn't exactly match the " \
                 "dataset: 'corrected' lists (your_value, actual_value) pairs that were auto-corrected via fuzzy match — mention these "
                 "briefly so the user knows what was actually used (e.g. 'I read that as \"science fiction\"'). 'unmatched' lists values " \
                 "that don't exist in the dataset at all — tell the user plainly that filter wasn't applied, rather than letting "
-                "them think zero results means nothing matches their taste.",
+                "them think zero results means nothing matches their taste."
+
+                "The result may also include 'filter_conflicts' when include/exclude filters overlapped (e.g. asking for and against " \
+                "the same genre) or when min_year exceeds max_year. Each conflict shows what overlapped and how it was resolved "
+                "('included' or 'excluded' means one side won automatically; 'unresolved' means the contradiction was left as-is and " \
+                "you should ask the user to clarify rather than guessing). Always mention resolved conflicts briefly so the user understands "
+                "why results reflect what they do.",
     parameters={
         "type": "object",
         "properties": {
@@ -114,13 +121,17 @@ IMPORTANT: when get_recommendations returns a 'title_match' field, check its sta
   clear they're not yet based on that specific movie.
 - 'not_found': tell the user plainly you couldn't find that title, and that you're giving
   genre/filter-based picks instead.
+Never imply a recommendation is "based on" a specific movie unless the match status was 'exact'.
 
 IMPORTANT: if get_recommendations returns 'filter_validation', don't stay silent about it. For 'corrected' values, briefly confirm 
 what you understood (e.g. "I matched 'scifi' to 'science fiction'"). For 'unmatched' values, clearly tell the user that 
 specific genre or actor wasn't found in the dataset and wasn't applied as a filter — this matters because a result of 
 "no recommendations found" should never be confused with "your filter was silently ignored."
 
-Never imply a recommendation is "based on" a specific movie unless the match status was 'exact'.
+IMPORTANT: if get_recommendations returns 'filter_conflicts', address it directly. For an auto-resolved conflict (resolved_as is 'included' 
+or 'excluded'), briefly explain the resolution (e.g. "you'd mentioned comedy earlier, but since you just said no comedy, I've excluded it"). 
+For 'unresolved' conflicts (like a year range that doesn't make sense), don't proceed with recommendations for that field — ask the user 
+directly to clarify instead of guessing.
 """
 
 
