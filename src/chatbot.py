@@ -155,7 +155,7 @@ def classify_error(e):
     return "fatal"
 
 
-def call_gemini(history):
+def call_gemini(history, session):
     """Calls generate_content with retry-with-backoff for rate limits/transient errors. Fatal errors 
     (bad request, bad API key) are raised immediately."""
     last_error = None
@@ -166,7 +166,7 @@ def call_gemini(history):
                 model="gemini-3.6-flash",
                 contents=history,
                 config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM_INSTRUCTION,
+                    system_instruction=build_system_instruction(session),
                     tools=[TOOL],
                     tool_config=types.ToolConfig(
                         function_calling_config=types.FunctionCallingConfig(mode="AUTO")
@@ -205,10 +205,10 @@ def login():
     return user_id
 
 
-def send_and_handle(history, tool_functions):
+def send_and_handle(history, tool_functions, session):
     """Sends convo to Gemini, executes any tool calls, feeds results back, and returns once Gemini produces plain-text reply."""
     while True:
-        response = call_gemini(history)
+        response = call_gemini(history, session)
 
         model_content = response.candidates[0].content
         history.append(model_content)
@@ -306,8 +306,9 @@ def main():
         history.append(types.Content(role="user", parts=[types.Part(text=user_input)]))
 
         try:
-            reply = send_and_handle(history, tool_functions)
+            reply = send_and_handle(history, tool_functions, session)
             print(f"Bot: {reply}\n")
+            history = maybe_trim_history(history, session)
         except ChatUnavailableError:
             print("Bot: Sorry, I'm having trouble connecting right now. Try sending your last message again in a minute.\n")
             history.pop()
