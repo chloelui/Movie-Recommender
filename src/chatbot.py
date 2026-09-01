@@ -13,20 +13,6 @@ load_dotenv()
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 
-def classify_error(e):
-    """Decide whether error is worth retrying (rate limit, timeout, transient server error) 
-    or something that will fail identically every time (bad request, auth failure) and should 
-    just be raised immediately instead of retried."""
-    text = str(e)
-    code = getattr(e, "code", None) or getattr(e, "status_code", None)
-
-    if code == 429 or "429" in text or "RESOURCE_EXHAUSTED" in text:
-        return "rate_limit"
-    if code in (500, 502, 503, 504) or any(s in text for s in ("500", "502", "503", "504", "UNAVAILABLE", "DEADLINE_EXCEEDED")):
-        return "transient"
-    return "fatal"
-
-
 # Tool schemas (what Gemini's allowed to call and w/ what arguments)
 GET_RECOMMENDATIONS = types.FunctionDeclaration(
     name="get_recommendations",
@@ -135,6 +121,14 @@ directly to clarify instead of guessing.
 """
 
 
+def build_system_instruction(session):
+    instruction = SYSTEM_INSTRUCTION
+    summary = session.get("conversation_summary")
+    if summary:
+        instruction += f"\n\nSummary of earlier conversation (background context only, not verbatim): {summary}"
+    return instruction
+
+
 # Handle possible errors with Gemini API in chat
 class ChatUnavailableError(Exception):
     """Raised when Gemini is unreachable after all retries and shows friendly message instead of crashing."""
@@ -143,6 +137,22 @@ class ChatUnavailableError(Exception):
 
 MAX_RETRIES = 3
 BASE_WAIT_SECONDS = 30
+MAX_HISTORY_TURNS = 8
+KEEP_RECENT_TURNS = 4
+
+
+def classify_error(e):
+    """Decide whether error is worth retrying (rate limit, timeout, transient server error) 
+    or something that will fail identically every time (bad request, auth failure) and should 
+    just be raised immediately instead of retried."""
+    text = str(e)
+    code = getattr(e, "code", None) or getattr(e, "status_code", None)
+
+    if code == 429 or "429" in text or "RESOURCE_EXHAUSTED" in text:
+        return "rate_limit"
+    if code in (500, 502, 503, 504) or any(s in text for s in ("500", "502", "503", "504", "UNAVAILABLE", "DEADLINE_EXCEEDED")):
+        return "transient"
+    return "fatal"
 
 
 def call_gemini(history):
@@ -215,6 +225,58 @@ def send_and_handle(history, tool_functions):
 
         history.append(types.Content(role="user", parts=result_parts))
         # loop again for gemini to write actual reply
+
+
+def get_turn_start_indices(history):
+    """Finds index of every user message that mark safe places to cut history w/o splitting tool call away from its result."""
+    indices = []
+    for i, content in enumerate(history):
+        if content.role != "user":
+            continue
+        parts = content.parts
+        if parts and getattr(parts[0], "text", None) and not getattr(parts[0], "function_response", None):
+            indices.append(i)
+    return indices
+
+
+def summarize_turns(turns_to_summarize, previous_summary):
+    """Condenses chunk of older conversation into text summary. Includes preferences stated, movies discussed, feedback given
+    so that context isn't lost after dropping raw messages."""
+    transcript_lines = []
+    for content in turns_to_summarize:
+        for part in content.parts:
+            if getattr(part, "text", None):
+                transcript_lines.append(f"{content.role}: {part.text}")
+            elif getattr(part, "function_call", None):
+                transcript_lines.append(f"{content.role} called {part.function_call.name} with {dict(part.function_call.args)}")
+            elif getattr(part, "function_response", None):
+                transcript_lines.append(f"tool result: {part.function_response.response}")
+
+    transcript = "\n".join(transcript_lines)
+    prior = f"Existing summary so far: {previous_summary}\n\n" if previous_summary else ""
+    prompt = f"""{prior}Summarize this excerpt from a conversation between a user and a movie recommendation assistant. Focus on: 
+            stated preferences (genres, actors, years, ratings), movies discussed or recommended, and any feedback/ratings the user gave. 
+            Be concise — a few sentences, not a transcript. This will be used as background context only.
+
+            Conversation excerpt:
+            {transcript}"""
+
+    response = client.models.generate_content(model="gemini-3.6-flash", contents=[types.Content(role="user", parts=[types.Part(text=prompt)])])
+    return response.text.strip()
+
+
+def maybe_trim_history(history, session):
+    """If convo grown past MAX_HISTORY_TURNS user turns, summarizes everything except most recent KEEP_RECENT_TURNS turns and drops raw
+    messages, replacing them with updated rolling summary in session state."""
+    turn_starts = get_turn_start_indices(history)
+    if len(turn_starts) <= MAX_HISTORY_TURNS:
+        return history
+
+    cutoff_index = turn_starts[-KEEP_RECENT_TURNS]
+    old_portion = history[:cutoff_index]
+    recent_portion = history[cutoff_index:]
+    session["conversation_summary"] = summarize_turns(old_portion, session.get("conversation_summary"))
+    return recent_portion
 
 
 def main():
