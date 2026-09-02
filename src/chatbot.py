@@ -2,7 +2,7 @@ import os
 import time
 from google import genai
 from google.genai import types
-from google.genai.errors import ClientError
+from google.genai.errors import ClientError, ServerError
 from dotenv import load_dotenv
 
 from db import create_user, get_user_id, get_watched_movie_ids, get_disliked_movie_ids
@@ -159,12 +159,12 @@ MAX_RETRIES = 3
 BASE_WAIT_SECONDS = 30
 MAX_HISTORY_TURNS = 8
 KEEP_RECENT_TURNS = 4
+RETRYABLE_ERRORS = (ClientError, ServerError)
 
 
 def classify_error(e):
-    """Decide whether error is worth retrying (rate limit, timeout, transient server error) 
-    or something that will fail identically every time (bad request, auth failure) and should 
-    just be raised immediately instead of retried."""
+    """Decide whether error is worth retrying (rate limit, timeout, transient server error) or something that will fail identically every 
+    time (bad request, auth failure) and should just be raised immediately instead of retried."""
     text = str(e)
     code = getattr(e, "code", None) or getattr(e, "status_code", None)
 
@@ -176,8 +176,8 @@ def classify_error(e):
 
 
 def call_gemini(history, session):
-    """Calls generate_content with retry-with-backoff for rate limits/transient errors. Fatal errors 
-    (bad request, bad API key) are raised immediately."""
+    """Calls generate_content with retry-with-backoff for rate limits/transient errors. Fatal errors (bad request, bad API key) 
+    are raised immediately."""
     last_error = None
 
     for attempt in range(MAX_RETRIES):
@@ -193,7 +193,7 @@ def call_gemini(history, session):
                     )
                 )
             )
-        except ClientError as e:
+        except RETRYABLE_ERRORS as e:
             kind = classify_error(e)
             last_error = e
 
@@ -332,7 +332,7 @@ def main():
         except ChatUnavailableError:
             print("Bot: Sorry, I'm having trouble connecting right now. Try sending your last message again in a minute.\n")
             history.pop()
-        except ClientError as e:
+        except RETRYABLE_ERRORS as e:
             if classify_error(e) == "fatal":
                 print("Bot: Something went wrong on my end that a retry won't fix. You may need to check your API key or request setup.\n")
                 history.pop()
