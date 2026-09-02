@@ -167,29 +167,67 @@ def build_tools(session):
 
     def get_movie_details(title):
         movies = session["movies"]
-        # Try matching something already shown this conversation, then fall back to whole dataset
+        # Try something already shown in convo then fall back to all movies
         for movie in session.get("last_batch", []):
             if movie["title"].lower() == title.lower():
-                return movie
-        _, movie = find_movie_by_title(movies, title)
-        if not movie:
-            return {"error": f"Couldn't find '{title}' in the dataset."}
-        return movie
+                result = dict(movie)
+                result["title_match"] = {"status": "exact", "queried_title": title, "matched_title": movie["title"]}
+                return result
+
+        match = find_movie_by_title(movies, title)
+        if not match["movie"]:
+            return {
+                "error": f"Couldn't find '{title}' in the dataset.",
+                "title_match": {"status": match["status"], "queried_title": title, "matched_title": None},
+            }
+
+        result = dict(match["movie"])
+        result["title_match"] = {
+            "status": match["status"],
+            "queried_title": match["queried_title"],
+            "matched_title": match["matched_title"],
+        }
+        return result
 
 
     def log_feedback(title, watched=None, liked=None, rating=None):
         movies = session["movies"]
         movie = None
+        match_status = "exact"
+        matched_title = None
+
         for m in session.get("last_batch", []):
             if m["title"].lower() == title.lower():
                 movie = m
+                matched_title = m["title"]
                 break
+
         if movie is None:
-            _, movie = find_movie_by_title(movies, title)
+            match = find_movie_by_title(movies, title)
+            movie = match["movie"]
+            match_status = match["status"]
+            matched_title = match["matched_title"]
+
         if movie is None:
-            return {"error": f"Couldn't find '{title}' to log feedback for."}
+            return {
+                "error": f"Couldn't find '{title}' to log feedback for.",
+                "title_match": {"status": match_status, "queried_title": title, "matched_title": None},
+            }
+
+        # Confirm guess with user instead of logging movie they may not have meant
+        if match_status == "fuzzy":
+            return {
+                "status": "needs_confirmation",
+                "title_match": {"status": "fuzzy", "queried_title": title, "matched_title": matched_title},
+                "note": "Do not log this yet. Ask the user to confirm the matched title before calling log_feedback again.",
+            }
+
         record_feedback(session["user_id"], movie["id"], movie["title"], watched=watched, rating=rating, liked=liked)
-        return {"status": "logged", "title": movie["title"]}
+        return {
+            "status": "logged",
+            "title": movie["title"],
+            "title_match": {"status": match_status, "queried_title": title, "matched_title": matched_title},
+        }
 
     return {
         "get_recommendations": get_recommendations,

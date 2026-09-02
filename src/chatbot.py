@@ -62,15 +62,18 @@ MORE_RECOMMENDATIONS = types.FunctionDeclaration(
 
 GET_MOVIE_DETAILS = types.FunctionDeclaration(
     name="get_movie_details",
-    description="Get full details (overview, rating, cast, year) for one specific movie the user asks about.",
+    description="Get full details (overview, rating, cast, year) for one specific movie the user asks about. The result includes "
+                "'title_match' showing how the title was resolved: 'exact', 'fuzzy' (only a guessed match — confirm with the user "
+                "before presenting details as if they're definitely the right movie), or 'not_found'.",
     parameters={"type": "object", "properties": {"title": {"type": "string"}}, "required": ["title"]}
 )
 
 LOG_FEEDBACK = types.FunctionDeclaration(
     name="log_feedback",
-    description="Record that the user watched, rated, or liked/disliked a movie — whether it came from "
-                "a recommendation just shown, or a movie they mention on their own (e.g. logging something "
-                "they watched with no recommendation involved).",
+    description="Record that the user watched, rated, or liked/disliked a movie — whether it came from a recommendation just shown, "
+                "or a movie they mention on their own (e.g. logging something they watched with no recommendation involved). If " 
+                "the result comes back with status='needs_confirmation', the title was only a fuzzy guess and NOTHING was logged — "
+                "ask the user to confirm the matched title, then call this tool again once they do.",
     parameters={
         "type": "object",
         "properties": {
@@ -99,6 +102,17 @@ to the user. Only set reset=true when the user is clearly abandoning the current
 Use the available tools whenever the user's message calls for one. After a tool returns results, summarize them naturally 
 in your own words rather than dumping raw data.
 
+MULTI-INTENT MESSAGES: a single message can contain more than one distinct request — for example "I watched Dune last night, loved it, 
+what's similar?" is BOTH a log_feedback call AND a get_recommendations call in the same turn. When you detect multiple genuine intents 
+in one message, call every relevant tool in that same turn rather than picking just one and dropping the rest. Address the results 
+of each tool call in your reply so nothing the user asked for goes unacknowledged.
+
+ASK BEFORE GUESSING: when a request is genuinely underspecified in a way that would force you to invent details the user didn't provide 
+— e.g. "recommend me a movie" with no genre, actor, mood, or anchor movie anywhere in the conversation, or a movie title so ambiguous 
+or vague you can't tell what they mean — ask a brief clarifying question instead of calling a tool with guessed values. This does not 
+apply to cases where a reasonable default exists (e.g. "something funny" is enough to search comedy; you don't need to also ask for 
+a decade or rating). Reserve clarification for cases where proceeding would mean fabricating a detail the user never gave you.
+
 IMPORTANT: when get_recommendations returns a 'title_match' field, check its status before you say anything about an anchor movie:
 - 'exact': fine to proceed normally, no need to mention the matching process at all.
 - 'fuzzy': you did NOT confidently find that movie. Say something like "I couldn't find an
@@ -108,6 +122,12 @@ IMPORTANT: when get_recommendations returns a 'title_match' field, check its sta
 - 'not_found': tell the user plainly you couldn't find that title, and that you're giving
   genre/filter-based picks instead.
 Never imply a recommendation is "based on" a specific movie unless the match status was 'exact'.
+
+The same 'title_match' field also appears in get_movie_details and log_feedback results — apply the identical rule there. For 
+get_movie_details, don't present fuzzy-matched details as if they're definitely the right movie — confirm the title with the user first. 
+For log_feedback, a fuzzy match means NOTHING WAS LOGGED YET (status will read 'needs_confirmation') — ask the user to confirm which movie 
+they meant, then call log_feedback again with the confirmed title. Never tell the user something was logged unless the tool result 
+actually says status='logged'.
 
 IMPORTANT: if get_recommendations returns 'filter_validation', don't stay silent about it. For 'corrected' values, briefly confirm 
 what you understood (e.g. "I matched 'scifi' to 'science fiction'"). For 'unmatched' values, clearly tell the user that 
