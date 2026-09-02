@@ -5,7 +5,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Set up schema connection
 def get_connection():
     return psycopg2.connect(
         dbname=os.getenv("DB_NAME"),
@@ -17,8 +16,8 @@ def get_connection():
     )
 
 
-# Unique user functions
 def username_exists(username):
+    """Check to see if username already exists to enforce unique usernames."""
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("SELECT 1 FROM users WHERE username = %s", (username,))
@@ -28,6 +27,7 @@ def username_exists(username):
     return exists
 
 def create_user(username):
+    """Create new unique username based on user input."""
     username = username.strip().lower()
     if username_exists(username):
         return None
@@ -41,6 +41,7 @@ def create_user(username):
     return user_id
 
 def get_user_id(username):
+    """Retrieve user's unique id."""
     username = username.strip().lower()
     conn = get_connection()
     cur = conn.cursor()
@@ -51,8 +52,8 @@ def get_user_id(username):
     return row["id"] if row else None
 
 
-# Record each recommendation
 def log_recommendation(user_id, source_movie, recommended_movie, score):
+    """Record each recommendation already made to user into history."""
     conn = get_connection()
     cur = conn.cursor()
     source_id = source_movie["id"] if source_movie else None
@@ -66,8 +67,8 @@ def log_recommendation(user_id, source_movie, recommended_movie, score):
     conn.close()
 
 
-# Get unique movies user already watched
 def get_watched_movie_ids(user_id):
+    """Get set of unique movies user already watched to prevent them from being recommended."""
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("SELECT movie_id FROM user_movie_interactions WHERE user_id = %s AND watched = TRUE", (user_id,))
@@ -77,8 +78,8 @@ def get_watched_movie_ids(user_id):
     return watched
 
 
-# Get unique movies that user dislikes
 def get_disliked_movie_ids(user_id):
+    """Get set of unique movies that user dislikes to prevent them from being recommended."""
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("SELECT movie_id FROM user_movie_interactions WHERE user_id = %s AND liked = FALSE", (user_id,))
@@ -88,8 +89,8 @@ def get_disliked_movie_ids(user_id):
     return disliked
 
 
-# Add/update feedback for a movie
 def record_feedback(user_id, movie_id, movie_title, watched=None, rating=None, liked=None):
+    """Add or update user feedback for a mentioned movie."""
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("""
@@ -102,6 +103,16 @@ def record_feedback(user_id, movie_id, movie_title, watched=None, rating=None, l
             liked = COALESCE(EXCLUDED.liked, user_movie_interactions.liked),
             updated_at = now()
     """, (user_id, movie_id, movie_title, watched, rating, liked))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+def record_detail_view(user_id, movie_id, movie_title):
+    """Record that user asked to see more details about movie."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("""INSERT INTO movie_detail_views (user_id, movie_id, movie_title) VALUES (%s, %s, %s)""", (user_id, movie_id, movie_title))
     conn.commit()
     cur.close()
     conn.close()

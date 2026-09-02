@@ -25,4 +25,12 @@ CREATE TABLE IF NOT EXISTS recommendation_history (
     recommended_movie_title TEXT,
     score REAL,
     recommended_at TIMESTAMP DEFAULT now()
-)
+);
+
+CREATE TABLE IF NOT EXISTS movie_detail_views (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id),
+    movie_id TEXT NOT NULL,
+    movie_title TEXT NOT NULL,
+    viewed_at TIMESTAMP DEFAULT now()
+);

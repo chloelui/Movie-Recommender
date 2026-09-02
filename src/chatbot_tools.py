@@ -1,4 +1,4 @@
-from db import log_recommendation, record_feedback
+from db import log_recommendation, record_feedback, record_detail_view
 from recommender_engine import find_movie_by_title, generate_recommendations, build_actor_vocab, build_genre_vocab, validate_values
 
 
@@ -170,6 +170,7 @@ def build_tools(session):
         # Try something already shown in convo then fall back to all movies
         for movie in session.get("last_batch", []):
             if movie["title"].lower() == title.lower():
+                record_detail_view(session["user_id"], movie["id"], movie["title"])
                 result = dict(movie)
                 result["title_match"] = {"status": "exact", "queried_title": title, "matched_title": movie["title"]}
                 return result
@@ -181,6 +182,7 @@ def build_tools(session):
                 "title_match": {"status": match["status"], "queried_title": title, "matched_title": None},
             }
 
+        record_detail_view(session["user_id"], match["movie"]["id"], match["movie"]["title"])
         result = dict(match["movie"])
         result["title_match"] = {
             "status": match["status"],
