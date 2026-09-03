@@ -1,6 +1,14 @@
 .venv/
 .env
+
 __pycache__/
 *.pyc
 .DS_Store
-data/
+
+data/movie_embeddings.npy
+data/movies.csv
+
+dashboard_api/.env
+dashboard_api/node_modules/
+dashboard_api/package-lock.json
+dashboard_api/package.json
