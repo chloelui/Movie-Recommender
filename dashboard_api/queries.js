@@ -1,5 +1,6 @@
 const pool = require('./db');
 
+// General user, movie, and interaction counts
 async function getKpis() {
   const users = await pool.query('SELECT COUNT(DISTINCT user_id) AS total_users FROM recommendation_history');
   const shown = await pool.query('SELECT COUNT(*) AS total_shown FROM recommendation_history');
@@ -11,6 +12,7 @@ async function getKpis() {
   };
 }
 
+// Build funnel of user engagement for every movie user was shown
 async function getFunnelCounts() {
   const result = await pool.query(`
     WITH shown AS (
@@ -57,6 +59,7 @@ async function getFunnelCounts() {
   ];
 }
 
+// Bucket movie recs into 5 groups by score
 async function getScoreQuintilePerformance() {
   const result = await pool.query(`
     WITH shown AS (
@@ -93,7 +96,8 @@ async function getScoreQuintilePerformance() {
   }));
 }
 
-async function getTopMovies(limit = 5) {
+// Top 10 most recommended movies and their avg scores
+async function getTopMovies(limit = 10) {
   const result = await pool.query(
     `SELECT recommended_movie_title AS title,
             COUNT(*) AS times_recommended,
@@ -107,7 +111,8 @@ async function getTopMovies(limit = 5) {
   return result.rows;
 }
 
-async function getRecentFeedback(limit = 10) {
+// Top 15 of most recent feedback (all users, all movies)
+async function getRecentFeedback(limit = 15) {
   const result = await pool.query(
     `SELECT u.username, umi.movie_title, umi.watched, umi.liked, umi.rating, umi.updated_at
      FROM user_movie_interactions umi
