@@ -1,3 +1,4 @@
+// React component to get/display KPI data
 export default function Kpis({ data }) {
   if (!data) return null;
   const cards = [
@@ -5,7 +6,7 @@ export default function Kpis({ data }) {
     { label: 'Recommendations shown', value: data.total_shown },
     { label: 'Average rating given', value: data.avg_rating ?? '—' },
   ];
-  return (
+  return (      // create three cards to show values and labels
     <div className="kpi-row">
       {cards.map(c => (
         <div className="kpi-card" key={c.label}>
