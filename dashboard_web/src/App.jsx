@@ -55,7 +55,7 @@ export default function App() {
       </section>
 
       <section>
-        <h2>Does a higher score predict a better outcome?</h2>
+        <h2>Does higher score predict better outcome?</h2>
         <p className="caption">Quintile 5 = highest-scored recommendations. If the algorithm works, rates should climb toward quintile 5.</p>
         <QuintileChart data={quintiles} />
       </section>
