@@ -7,6 +7,8 @@ __pycache__/
 
 data/movie_embeddings.npy
 data/movies.csv
+data/movielens/
+data/cf_model.npz
 
 dashboard_api/.env
 dashboard_api/node_modules/
