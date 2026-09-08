@@ -8,6 +8,7 @@ __pycache__/
 data/movie_embeddings.npy
 data/movies.csv
 data/movielens/
+data/movielens_to_tmdb.json
 data/cf_model.npz
 
 dashboard_api/.env
