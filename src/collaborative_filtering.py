@@ -21,7 +21,7 @@ def load_ratings(path=RATINGS_PATH):
     print(f"Loaded {len(df):,} ratings from {df['userId'].nunique():,} users across {df['movieId'].nunique():,} movies.")
     return df
 
-def filter_sparse_user_items(df, min_user=MIN_RATINGS_PER_USER, min_item=MIN_RATINGS_PER_ITEM):
+def filter_sparse_users_items(df, min_user=MIN_RATINGS_PER_USER, min_item=MIN_RATINGS_PER_ITEM):
     """
     Drop users and movies w/ too little data to be useful. Filter items first, then users, rather than both at once to keep two
     constraints from fighting each other.
