@@ -50,6 +50,10 @@ GET_RECOMMENDATIONS = types.FunctionDeclaration(
             "min_rating": {"type": "number", "nullable": True},
             "reset": {"type": "boolean", "nullable": True,
                       "description": "True only to wipe all prior filters and start a brand new search."},
+            "mood": {"type": "string", "nullable": True,
+                      "description": "What the user is in the mood for right now, e.g. 'cozy', 'intense', 'scary', 'sad', 'feel-good', "
+                                    "'mind-bending', 'light'. Only set this when the user actually expresses a mood/vibe this turn — "
+                                      "don't infer one from genre requests alone."},
         }
     }
 )
@@ -102,6 +106,10 @@ to the user. Only set reset=true when the user is clearly abandoning the current
 
 Use the available tools whenever the user's message calls for one. After a tool returns results, summarize them naturally 
 in your own words rather than dumping raw data.
+
+When the user expresses a mood or vibe ("I want something cozy tonight", "I'm in the mood for something intense") rather than a specific 
+genre, pass that as the `mood` parameter to get_recommendations alongside or instead of genre filters. Mood is a soft preference that 
+nudges rankings, not a strict filter — don't ask the user to also specify genres just because you set a mood.
 
 MULTI-INTENT MESSAGES: a single message can contain more than one distinct request — for example "I watched Dune last night, loved it, 
 what's similar?" is BOTH a log_feedback call AND a get_recommendations call in the same turn. When you detect multiple genuine intents 

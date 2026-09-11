@@ -1,6 +1,6 @@
 from db import log_recommendation, record_feedback, record_detail_view, get_liked_movie_ids, get_disliked_movie_ids
-from recommender_engine import find_movie_by_title, generate_recommendations, build_actor_vocab, build_genre_vocab, validate_values
-from hybrid_recommender import build_user_cf_profile
+from recommender_engine import find_movie_by_title, build_actor_vocab, build_genre_vocab, validate_values
+from hybrid_recommender import build_user_cf_profile, rank_hybrid
 
 
 def default_filters():
@@ -127,9 +127,15 @@ def build_tools(session):
             target_index, target = None, None
             active["target_movie"] = None  # don't re-guess bad anchor on future turns
 
-        scored = generate_recommendations(
+        mood = kwargs.get("mood")
+
+        scored = rank_hybrid(
             movies, embeddings, target_index, target, active,
-            session["seen_ids"], session["disliked_ids"]
+            session["seen_ids"], session["disliked_ids"],
+            cf_model=session.get("cf_model"),
+            user_profile=session.get("user_cf_profile"),
+            genre_affinity=session.get("genre_affinity"),
+            mood=mood,
         )
 
         session["last_scored"] = scored
@@ -153,6 +159,8 @@ def build_tools(session):
             "max_year": active["max_year"],
             "min_rating": active["min_rating"],
         }
+        if mood:
+            result["mood"] = mood
         if validation_report:
             result["filter_validation"] = validation_report
         if conflicts:
