@@ -1,5 +1,6 @@
-from db import log_recommendation, record_feedback, record_detail_view
+from db import log_recommendation, record_feedback, record_detail_view, get_liked_movie_ids, get_disliked_movie_ids
 from recommender_engine import find_movie_by_title, generate_recommendations, build_actor_vocab, build_genre_vocab, validate_values
+from hybrid_recommender import build_user_cf_profile
 
 
 def default_filters():
@@ -225,6 +226,13 @@ def build_tools(session):
             }
 
         record_feedback(session["user_id"], movie["id"], movie["title"], watched=watched, rating=rating, liked=liked)
+
+        # Update CF profile so next recommendation call reflects feedback
+        if liked is not None:
+            liked_ids = get_liked_movie_ids(session["user_id"])
+            disliked_ids_cf = get_disliked_movie_ids(session["user_id"])
+            session["user_cf_profile"] = build_user_cf_profile(session["cf_model"], liked_ids, disliked_ids_cf)
+
         return {
             "status": "logged",
             "title": movie["title"],
