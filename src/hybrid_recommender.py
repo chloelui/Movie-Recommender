@@ -97,3 +97,159 @@ def build_user_cf_profile(cf_model, liked_movie_ids, disliked_movie_ids=None):
     weights = np.array(weights).reshape(-1, 1)
     profile = (vectors * weights).sum(axis=0) / weights.sum()
     return profile
+
+
+def collaborative_score(cf_model, user_profile, candidate_tmdb_id):
+    """
+    Calculate predicted affinity as dot product of user's profile vector and candidate movie's item vector. Returns None (not 0.0) 
+    whenever there isn't enough data to compute real number, so tcaller can distinguish no signal from neutral signal.
+    """
+    if user_profile is None:
+        return None
+    item_vec = cf_model.item_vector(candidate_tmdb_id)
+    if item_vec is None:
+        return None
+    return float(np.dot(user_profile, item_vec))
+
+
+def build_genre_affinity(feedback_rows):
+    """
+    Turns user's own logged feedback into {genre_lower: score} map for personal history component. Purely about what genres user has 
+    rated well before.
+
+    feedback_rows: iterable of (genres_pipe_string, liked, rating) from user_movie_interactions
+
+    A genre gets +1 for each liked=True occurrence, -1 for liked=False, and extra nudge toward/away based on numeric rating when present.
+    """
+    affinity = {}
+    for genres_str, liked, rating in feedback_rows:
+        if not genres_str:
+            continue
+        genres = {g.lower() for g in genres_str.split("|")}
+
+        signal = 0.0
+        if liked is True:
+            signal += 1.0
+        elif liked is False:
+            signal -= 1.0
+        if rating is not None:
+            signal += (rating - 5.0) / 5.0              # centers 0-10 rating around 0
+
+        for g in genres:
+            affinity[g] = affinity.get(g, 0.0) + signal
+
+    return affinity
+
+
+def personal_history_score(movie, genre_affinity):
+    if not genre_affinity:
+        return 0.0
+    movie_genres = {g.lower() for g in movie["genres"].split("|")} if movie["genres"] else set()
+    scores = [genre_affinity[g] for g in movie_genres if g in genre_affinity]
+    return sum(scores) / len(scores) if scores else 0.0
+
+
+def mood_score(movie, mood):
+    if not mood:
+        return 0.0
+    boosted_genres = MOOD_GENRE_BOOST.get(mood.lower())
+    if not boosted_genres:
+        return 0.0
+    movie_genres = set(movie["genres"].split("|")) if movie["genres"] else set()
+    return float(len(movie_genres & boosted_genres))
+
+
+def _minmax_normalize(values):
+    """
+    Min-max normalize each component of hybrid model to 0-1 within current candidate pool b/c each component has different scale.
+    """
+    values = np.asarray(values, dtype=float)
+    lo, hi = values.min(), values.max()
+    if hi - lo < 1e-9:
+        return np.zeros_like(values)
+    return (values - lo) / (hi - lo)
+
+
+def rank_hybrid(movies,embeddings,target_index,target,filters,seen_ids,disliked_ids,
+                cf_model=None,user_profile=None,genre_affinity=None,mood=None,weights=None,):
+    """
+    Considers user's filter requests and computes movie's score based on five independently-computed, independently-normalized 
+    components combined by weighted sum.
+
+    cf_model / user_profile / genre_affinity / mood are all optional and set to None by default. When whole component is unavailable, 
+    its weight is redistributed proportionally across remaining components rather than pulling every score toward zero.
+    """
+    weights = dict(weights or DEFAULT_WEIGHTS)
+    include_genres = filters.get("include_genres", set())
+    exclude_genres = filters.get("exclude_genres", set())
+    include_actors = filters.get("include_actors", set())
+    exclude_actors = filters.get("exclude_actors", set())
+    min_year = filters.get("min_year")
+    max_year = filters.get("max_year")
+    min_rating = filters.get("min_rating")
+
+    candidates = [
+        (i, movie) for i, movie in enumerate(movies)
+        if (target is None or movie["id"] != target["id"])
+        and movie["id"] not in seen_ids and movie["id"] not in disliked_ids
+        and passes_filters(movie, include_genres, exclude_genres, include_actors, exclude_actors, min_year, max_year, min_rating)
+    ]
+    if not candidates:
+        return []
+
+    semantic_raw, metadata_raw, cf_raw, history_raw, mood_raw = [], [], [], [], []
+    any_cf_signal = False
+
+    for i, movie in candidates:
+        if target is not None:
+            semantic_raw.append(cosine_similarity(embeddings[target_index], embeddings[i]))
+            metadata_raw.append(genre_similarity(target, movie))
+        else:
+            semantic_raw.append(0.0)
+            movie_genres = {g.lower() for g in movie["genres"].split("|")} if movie["genres"] else set()
+            metadata_raw.append(len(movie_genres & include_genres))
+
+        cf_val = None
+        if cf_model is not None and user_profile is not None:
+            cf_val = collaborative_score(cf_model, user_profile, movie["id"])
+        if cf_val is not None:
+            any_cf_signal = True
+        cf_raw.append(cf_val if cf_val is not None else 0.0)
+
+        history_raw.append(personal_history_score(movie, genre_affinity))
+        mood_raw.append(mood_score(movie, mood))
+
+    semantic_n = _minmax_normalize(semantic_raw)
+    metadata_n = _minmax_normalize(metadata_raw)
+    cf_n = _minmax_normalize(cf_raw) if any_cf_signal else np.zeros(len(candidates))
+    history_n = _minmax_normalize(history_raw)
+    mood_n = _minmax_normalize(mood_raw)
+
+    # Redistribute weight away from any component w/ nothing to contribute this turn
+    active_weights = dict(weights)
+    if not any_cf_signal:
+        active_weights["collaborative"] = 0.0
+    if not genre_affinity:
+        active_weights["personal_history"] = 0.0
+    if not mood:
+        active_weights["mood"] = 0.0
+
+    total = sum(active_weights.values())
+    if total <= 0:
+        active_weights = weights                        # if everything was missing, just use configured weights as-is
+        total = sum(active_weights.values())
+    active_weights = {k: v / total for k, v in active_weights.items()}
+
+    scored = []
+    for idx, (i, movie) in enumerate(candidates):
+        score = (
+            active_weights.get("semantic", 0) * semantic_n[idx]
+            + active_weights.get("metadata", 0) * metadata_n[idx]
+            + active_weights.get("collaborative", 0) * cf_n[idx]
+            + active_weights.get("personal_history", 0) * history_n[idx]
+            + active_weights.get("mood", 0) * mood_n[idx]
+        )
+        scored.append((round(float(score), 4), movie))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return scored

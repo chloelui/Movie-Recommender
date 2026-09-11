@@ -1,3 +1,11 @@
+"""
+Reads data/movielens/links.csv once, builds a dict {tmdb_id -> movielens_id}, and caches it to disk as JSON so 
+other future scripts can load the cache instead of re-parsing data/movielens/links.csv every time.
+
+To create JSON, run it directly:
+    python movielens_linking.py
+"""
+
 import csv
 import json
 import os
