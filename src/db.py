@@ -89,6 +89,21 @@ def get_disliked_movie_ids(user_id):
     return disliked
 
 
+def get_feedback_rows_with_genres(user_id, movies_by_id):
+    """
+    Returns (genres_string, liked, rating) tuples for hybrid_recommender.py. movies_by_id is {movie_id: movie_row} built from movies.csv.
+    """
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT movie_id, liked, rating FROM user_movie_interactions WHERE user_id = %s",(user_id,))
+    rows = []
+    for movie_id, liked, rating in cur.fetchall():
+        movie = movies_by_id.get(movie_id)
+        if movie:
+            rows.append((movie["genres"], liked, rating))
+    return rows
+
+
 def record_feedback(user_id, movie_id, movie_title, watched=None, rating=None, liked=None):
     """Add or update user feedback for a mentioned movie."""
     conn = get_connection()
