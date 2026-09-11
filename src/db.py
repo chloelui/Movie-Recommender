@@ -78,8 +78,19 @@ def get_watched_movie_ids(user_id):
     return watched
 
 
+def get_liked_movie_ids(user_id):
+    """Get set of unique movies that user likes for building collaborative filtering model."""
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT movie_id FROM user_movie_interactions WHERE user_id = %s AND liked = TRUE", (user_id,))
+    liked = {row["movie_id"] for row in cur.fetchall()}
+    cur.close()
+    conn.close()
+    return liked
+
+
 def get_disliked_movie_ids(user_id):
-    """Get set of unique movies that user dislikes to prevent them from being recommended."""
+    """Get set of unique movies that user dislikes to prevent from being recommended and to build collaborative filtering model."""
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("SELECT movie_id FROM user_movie_interactions WHERE user_id = %s AND liked = FALSE", (user_id,))
