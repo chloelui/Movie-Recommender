@@ -265,16 +265,16 @@ def _take_next_batch(session, batch_size=5):
         return {"movies": [], "note": "No more recommendations left for these filters."}
 
     target = session.get("last_target")
-    for score, movie in batch:
-        log_recommendation(session["user_id"], target, movie, score)
+    for score, movie, components in batch:
+        log_recommendation(session["user_id"], target, movie, score, components=components)
 
-    session["last_batch"] = [movie for _, movie in batch]
+    session["last_batch"] = [movie for _, movie, _ in batch]
     session["last_offset"] = offset + batch_size
 
     return {
         "movies": [
             {"title": m["title"], "year": m["release_date"][:4] if m["release_date"] else "N/A",
              "rating": m["vote_average"], "score": s, "overview": m["overview"]}
-            for s, m in batch
+            for s, m, _ in batch
         ]
     }
