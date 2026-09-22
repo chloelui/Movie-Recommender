@@ -242,6 +242,13 @@ def rank_hybrid(movies,embeddings,target_index,target,filters,seen_ids,disliked_
 
     scored = []
     for idx, (i, movie) in enumerate(candidates):
+        components = {
+            "semantic_score": round(float(semantic_n[idx]), 4),
+            "metadata_score": round(float(metadata_n[idx]), 4),
+            "collaborative_score": round(float(cf_n[idx]), 4),
+            "personal_history_score": round(float(history_n[idx]), 4),
+            "mood_score": round(float(mood_n[idx]), 4),
+        }
         score = (
             active_weights.get("semantic", 0) * semantic_n[idx]
             + active_weights.get("metadata", 0) * metadata_n[idx]
@@ -249,7 +256,7 @@ def rank_hybrid(movies,embeddings,target_index,target,filters,seen_ids,disliked_
             + active_weights.get("personal_history", 0) * history_n[idx]
             + active_weights.get("mood", 0) * mood_n[idx]
         )
-        scored.append((round(float(score), 4), movie))
+        scored.append((round(float(score), 4), movie, components))
 
     scored.sort(key=lambda x: x[0], reverse=True)
     return scored
