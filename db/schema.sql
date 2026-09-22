@@ -27,6 +27,14 @@ CREATE TABLE IF NOT EXISTS recommendation_history (
     recommended_at TIMESTAMP DEFAULT now()
 );
 
+-- Add component score columns to rec history table
+ALTER TABLE recommendation_history
+    ADD COLUMN semantic_score DOUBLE PRECISION,
+    ADD COLUMN metadata_score DOUBLE PRECISION,
+    ADD COLUMN collaborative_score DOUBLE PRECISION,
+    ADD COLUMN personal_history_score DOUBLE PRECISION,
+    ADD COLUMN mood_score DOUBLE PRECISION;
+
 CREATE TABLE IF NOT EXISTS movie_detail_views (
     id SERIAL PRIMARY KEY,
     user_id INTEGER REFERENCES users(id),

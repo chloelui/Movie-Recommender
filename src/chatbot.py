@@ -5,7 +5,7 @@ from google.genai import types
 from google.genai.errors import ClientError, ServerError
 from dotenv import load_dotenv
 
-from db import create_user, get_user_id, get_watched_movie_ids, get_liked_movie_ids, get_disliked_movie_ids, get_feedback_rows_with_genres
+from db import create_user, get_user_id, get_watched_movie_ids, get_disliked_movie_ids, get_liked_movie_ids, get_feedback_rows_with_genres
 from recommender_engine import load_movies, load_embeddings
 from hybrid_recommender import CFModel, build_user_cf_profile, build_genre_affinity
 from chatbot_tools import build_tools, default_filters
@@ -314,11 +314,11 @@ def main():
     movies = load_movies()
     movies_by_id = {m["id"]: m for m in movies}
 
-    cf_model = CFModel()            # loads data/cf_model.npz and id mapping once
+    cf_model = CFModel()                                        # loads cf_model.npz  and movielens_to_tmdb.json once
 
     liked_ids = get_liked_movie_ids(user_id)
-    disliked_ids_cf = get_disliked_movie_ids(user_id)
-    user_cf_profile = build_user_cf_profile(cf_model, liked_ids, disliked_ids_cf)
+    disliked_ids = get_disliked_movie_ids(user_id)
+    user_cf_profile = build_user_cf_profile(cf_model, liked_ids, disliked_ids)
 
     feedback_rows = get_feedback_rows_with_genres(user_id, movies_by_id)
     genre_affinity = build_genre_affinity(feedback_rows)
@@ -328,7 +328,7 @@ def main():
         "movies": movies,
         "embeddings": load_embeddings(),
         "seen_ids": get_watched_movie_ids(user_id),
-        "disliked_ids": get_disliked_movie_ids(user_id),
+        "disliked_ids": disliked_ids,
         "active_filters": default_filters(),
         "cf_model": cf_model,
         "user_cf_profile": user_cf_profile,
