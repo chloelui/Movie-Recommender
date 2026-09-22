@@ -52,16 +52,24 @@ def get_user_id(username):
     return row["id"] if row else None
 
 
-def log_recommendation(user_id, source_movie, recommended_movie, score):
-    """Record each recommendation already made to user into history."""
+def log_recommendation(user_id, source_movie, recommended_movie, score, components=None):
+    """Record each recommendation already made to user into history, along with per-component normalized scores that produced it.
+    This is to let tune_weights.py later learn which components predict liked outcome, instead of only seeing final score."""
+    components = components or {}
     conn = get_connection()
     cur = conn.cursor()
     source_id = source_movie["id"] if source_movie else None
     source_title = source_movie["title"] if source_movie else None
     cur.execute("""
-        INSERT INTO recommendation_history (user_id, source_movie_id, source_movie_title, recommended_movie_id, recommended_movie_title, score)
-        VALUES (%s, %s, %s, %s, %s, %s)
-    """, (user_id, source_id, source_title, recommended_movie["id"], recommended_movie["title"], score))
+        INSERT INTO recommendation_history
+            (user_id, source_movie_id, source_movie_title, recommended_movie_id, recommended_movie_title, score,
+             semantic_score, metadata_score, collaborative_score, personal_history_score, mood_score)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    """, (
+        user_id, source_id, source_title, recommended_movie["id"], recommended_movie["title"], score,
+        components.get("semantic_score"), components.get("metadata_score"), components.get("collaborative_score"),
+        components.get("personal_history_score"), components.get("mood_score"),
+    ))
     conn.commit()
     cur.close()
     conn.close()
